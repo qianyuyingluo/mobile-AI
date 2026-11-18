@@ -1,0 +1,140 @@
+{
+  "state": "waiting",
+  "frames": 8,
+  "frame_size": [
+    768,
+    960
+  ],
+  "sheet_size": [
+    3072,
+    1920
+  ],
+  "durations_ms": [
+    205,
+    165,
+    145,
+    180,
+    210,
+    150,
+    170,
+    225
+  ],
+  "sprite_bounds": [
+    [
+      270,
+      114,
+      490,
+      939
+    ],
+    [
+      271,
+      102,
+      492,
+      937
+    ],
+    [
+      267,
+      109,
+      492,
+      940
+    ],
+    [
+      260,
+      102,
+      494,
+      938
+    ],
+    [
+      262,
+      105,
+      493,
+      941
+    ],
+    [
+      270,
+      106,
+      490,
+      940
+    ],
+    [
+      269,
+      106,
+      490,
+      940
+    ],
+    [
+      268,
+      111,
+      491,
+      940
+    ]
+  ],
+  "decoded_apng_matches_frames": true,
+  "rgba_sha256": [
+    "b0297f8b0199feebefea376e88050f65bf08f487778610253cf2d3d291bf1643",
+    "b55f1b887383446e384266bd62a3d26545c6bd65ebdbe836f397e8c6eb5cef18",
+    "8e5b12a76758f7c1ee919b24a655a3ae7c95a8f5e66600a996a14c803ed97d63",
+    "91949f2ef2f2c6ae6f98fdabded824927ebd0031eba9cabc622a15fc89047bbb",
+    "890a4049a689563f412aa24c4912ba9c07a651719571d225317d773be4acd999",
+    "7151fec2d32e94fefe63c8fb5c924831efae137d640197d3311f5433bd12ff6a",
+    "e09a9f24e6ef3e48a13edd61124b2d0ee3d3b88601977d1cf0dbaa0d7cebccd0",
+    "cbf36384f8449968a0c3e027511fd5acfa9fabe3c2fb57a50c044eec113fbd01"
+  ],
+  "source": "C:\\Users\\a1721\\Desktop\\yingluo-neko\\yingluo-animation-v2\\raw\\waiting.png",
+  "source_size": [
+    1254,
+    1254
+  ],
+  "source_bbox": [
+    [
+      94,
+      8,
+      258,
+      622
+    ],
+    [
+      400,
+      0,
+      567,
+      620
+    ],
+    [
+      705,
+      2,
+      873,
+      622
+    ],
+    [
+      1006,
+      0,
+      1182,
+      621
+    ],
+    [
+      90,
+      626,
+      263,
+      1250
+    ],
+    [
+      402,
+      628,
+      570,
+      1249
+    ],
+    [
+      706,
+      629,
+      873,
+      1249
+    ],
+    [
+      1007,
+      632,
+      1176,
+      1249
+    ]
+  ],
+  "sprite_scale": 1.3526,
+  "enhancement": "RealESRGAN_x4plus_anime_6B"
+}

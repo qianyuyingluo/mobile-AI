@@ -1,0 +1,84 @@
+{
+  "state": "running-left",
+  "frames": 8,
+  "frame_size": [
+    768,
+    960
+  ],
+  "sheet_size": [
+    3072,
+    1920
+  ],
+  "durations_ms": [
+    100,
+    90,
+    90,
+    100,
+    100,
+    90,
+    90,
+    100
+  ],
+  "sprite_bounds": [
+    [
+      117,
+      120,
+      579,
+      938
+    ],
+    [
+      209,
+      105,
+      547,
+      937
+    ],
+    [
+      221,
+      102,
+      544,
+      938
+    ],
+    [
+      205,
+      108,
+      599,
+      939
+    ],
+    [
+      101,
+      104,
+      600,
+      938
+    ],
+    [
+      233,
+      103,
+      563,
+      939
+    ],
+    [
+      221,
+      101,
+      569,
+      938
+    ],
+    [
+      205,
+      115,
+      613,
+      939
+    ]
+  ],
+  "decoded_apng_matches_frames": true,
+  "rgba_sha256": [
+    "4137ecd42d104d2215aa22f4aa12b37945e1f6b6941b26446fcfc79eeff68411",
+    "6e68b0255f30d006364974d8587b8238555c526a1f1d05e5e7f3bbfb83e8904a",
+    "21abf36306ae10799c13f3f9a8a03abc9d7efbe03ad9ba2e122ec540a2bee004",
+    "c66e6f0c143258e5b34c0aa374c66fd0d29e8e23f407bb315e1b14e4be080335",
+    "6beabae888135fe5c0ff020ec206ef7a74d48c3f817ca441418fa65a34499147",
+    "6f74f15f1ae81a852ebb3a84d371cc1e1414bb9ded4c0adc89ff36af0d182b0c",
+    "37fa3c255a0d76a1339f2599b543c67355366b8293498f10608605d5bd49950a",
+    "c0e8077fed5f1e6e67c7f8300b08cd41a9cd6b82048635ea1aa43119b7ca036a"
+  ],
+  "source": "framewise mirror of running-right"
+}
