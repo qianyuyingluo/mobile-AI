@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
+import { zstdCompressSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,6 +10,104 @@ import test from 'node:test'
 import { startServer } from './server.mjs'
 
 const agents = { codex: { available: true, name: 'codex' }, deepseek: { available: true, name: 'deepseek' } }
+
+test('paired desktop library follows application membership, reads growing transcripts and resumes in the original cwd', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'desktop-history-'))
+  t.after(() => rm(base, { recursive: true, force: true }))
+  const cwd = join(base, 'original'), codex = join(base, 'codex'), dsh = join(base, 'dsh')
+  const directory = join(dsh, 'sessions', 'workspace', 'session-abc')
+  for (const path of [cwd, codex, directory, join(dsh, 'storages')]) await mkdir(path, { recursive: true })
+  const db = new DatabaseSync(join(codex, 'state_5.sqlite'))
+  db.exec('CREATE TABLE threads(id, title, updated_at, archived, cwd, rollout_path, source)')
+  const rollout = join(codex, 'thread.jsonl')
+  db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?,?)').run('thread1', 'Codex 会话', 123, 0, cwd, rollout, 'vscode')
+  db.close()
+  await writeFile(join(codex, '.codex-global-state.json'), JSON.stringify({
+    'local-projects': { a: { id: 'a', name: '命名项目', rootPaths: [base] } },
+    'thread-project-assignments': { thread1: { projectId: 'a' } },
+  }))
+  const log = obj => JSON.stringify(obj) + '\n'
+  await writeFile(rollout, log({ type: 'event_msg', payload: { type: 'item_completed', item: {
+    type: 'UserMessage', content: [{ type: 'text', text: '已同步' }] } } }))
+  await writeFile(join(dsh, 'storages', 'workspace.json'), JSON.stringify({
+    tables: { workspaces: { a: { title: '桌面工作区', path: base, sessionIds: ['session-abc'] } } },
+  }))
+  const file = join(directory, 'session.v4.jsonl.zstd')
+  await writeFile(file, zstdCompressSync(log({ type: 'session', id: 'session-abc', cwd })))
+  await appendFile(file, zstdCompressSync(log({ type: 'user/message', data: { content: '第一问' } })))
+  let desktopCalls = 0
+  const app = await fixture(t, { env: { DSH_HOME: dsh, CODEX_HOME: codex }, syncDesktop: true,
+    desktopSenders: { deepseek: async (id, text, _requestId, { attachments }) => {
+      assert.equal(id, 'session-abc'); desktopCalls++
+      if (attachments.length) {
+        assert.match(text, /附件验证/u)
+        assert.equal((await readFile(attachments[0].path)).toString(), '附件验证')
+        assert(attachments[0].path.startsWith(join(cwd, '.yingluo-uploads')))
+      } else assert.equal(text, '手机消息')
+      return { accepted: true }
+    } },
+    async runner(agent, context) {
+      assert.equal(context.projectDir, cwd)
+      assert.equal(context.agentHome, dsh)
+      assert.equal(context.resumeId, 'session-abc')
+      return { text: '已继续', resumeId: context.resumeId }
+    },
+  })
+  assert.equal((await app.request('work/library')).status, 401)
+  await app.pair()
+  const { groups } = (await app.request('work/library')).body
+  for (const title of ['命名项目', '桌面工作区']) assert.equal(groups.find(g => g.name === title)?.sessions.length, 1)
+  assert.equal((await app.request('work/library/codex/thread1')).body.messages[0].text, '已同步')
+  const history = new DatabaseSync(join(codex, 'thread_history_1.sqlite'))
+  history.exec('CREATE TABLE thread_items(thread_id, item_type, item_json, rollout_ordinal, updated_at_ordinal, item_id)')
+  history.prepare('INSERT INTO thread_items VALUES (?,?,?,?,?,?)').run('thread1', 'agentMessage',
+    JSON.stringify({ type: 'agentMessage', text: '数据库中的回复' }), 2, 2, 'reply')
+  history.close()
+  await rm(rollout)
+  await app.restart()
+  assert.equal((await app.request('work/library/codex/thread1')).body.messages[0].text, '数据库中的回复')
+  const route = 'work/library/deepseek/session-abc'
+  assert.equal((await app.request(route)).body.messages.length, 1)
+  for (let n = 0; n < 31; n++) await appendFile(file, zstdCompressSync(log({
+    type: 'assistant/message', data: { turn: 1, message: { content: [{ type: 'text', text: '新回复' + n }] } },
+  })))
+  const delivered = join(cwd, 'answer.py')
+  await writeFile(delivered, 'print("同步文件")')
+  await appendFile(file, zstdCompressSync(log({ type: 'deliverables/presented', data: { turn: 1, files: [
+    { path: delivered, description: '生成的脚本' }, { path: join(base, 'private.txt') },
+  ] } })))
+  await writeFile(join(base, 'private.txt'), 'outside workspace')
+  const latest = (await app.request(route)).body
+  assert.equal(latest.messages.at(-1).text, '新回复30')
+  assert.equal(latest.before, 2)
+  const deliveredFile = latest.messages.at(-1).attachments[0]
+  assert.equal(deliveredFile.name, 'answer.py')
+  assert.equal(deliveredFile._path, undefined)
+  const download = (await app.request(route + '/files/' + deliveredFile.desktopFile)).body
+  assert.equal(Buffer.from(download.data, 'base64').toString(), 'print("同步文件")')
+  assert.equal((await app.request(route + '/files/' + latest.messages.at(-1).attachments[1].desktopFile)).status, 409)
+  assert.equal((await app.request(route + '?before=2')).body.messages[0].text, '第一问')
+  const send = { requestId: 'f8aa811d-c361-44cd-a4cc-7f148e0dcdb8', text: '手机消息' }
+  assert.equal((await app.request(route, 'POST', send)).status, 200)
+  assert.equal((await app.request(route, 'POST', send)).status, 200)
+  await app.restart()
+  assert.equal((await app.request(route, 'POST', send)).status, 200)
+  assert.equal(desktopCalls, 1)
+  assert.equal((await app.request(route, 'POST', { ...send, text: '另一条消息' })).status, 409)
+  const upload = { requestId: 'f8aa811d-c361-44cd-a4cc-7f148e0dcdb9', text: '', attachments: [
+    { name: '../note.txt', data: Buffer.from('附件验证').toString('base64') },
+  ] }
+  assert.equal((await app.request(route, 'POST', upload)).status, 200)
+  assert.equal((await app.request(route, 'POST', upload)).status, 200)
+  assert.equal(desktopCalls, 2)
+  assert.equal((await app.request(route, 'POST', { ...upload, attachments: [
+    { name: '../note.txt', data: Buffer.from('changed bytes').toString('base64') },
+  ] })).status, 409)
+  assert.equal((await app.request('work/sessions', 'POST', { agent: 'deepseek', libraryId: 'unknown' })).status, 404)
+  const { session } = (await app.request('work/sessions', 'POST', { agent: 'deepseek', libraryId: 'session-abc', cwd: base })).body
+  await app.request('work/sessions/' + session.id + '/messages', 'POST', { text: '继续' })
+  assert.equal((await app.waitFor(session.id, s => s.status === 'idle')).messages.at(-1).text, '已继续')
+})
 
 async function fixture(t, overrides) {
   const folder = await mkdtemp(join(tmpdir(), 'yingluo-server-test-'))
@@ -144,7 +244,7 @@ test('exposes recent metadata to paired clients and adopts only a listed session
   const request = { agent: 'deepseek', recentId: 'desktop-session' }
   const { body: { session } } = await app.request('work/sessions', 'POST', request)
   assert.equal((await app.request('work/sessions', 'POST', request)).body.session.id, session.id)
-  assert.deepEqual((await app.request('work')).body.recentSessions, [])
+  assert.deepEqual((await app.request('work')).body.recentSessions.map(row => row.id), ['desktop-session'])
   await app.request('work/sessions/' + session.id + '/messages', 'POST', { text: '继续' })
   const result = await app.waitFor(session.id, item => item.status === 'idle')
   assert.equal(result.messages.at(-1).text, '原会话已接续')

@@ -82,8 +82,9 @@ input, select {
 .topbar .brand:active { transform: scale(.96); }
 .topbar .brand img, .topbar .brand span { opacity: 1; }
 .draft-modes { grid-column: 2; pointer-events: auto; }
+.topbar-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 8px; }
+.topbar-actions button { pointer-events: auto; }
 .quick-new {
-  grid-column: 3; justify-self: end; pointer-events: auto;
   width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%;
   font-size: 27px; line-height: 1; color: inherit;
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 20%, transparent);
@@ -92,6 +93,14 @@ input, select {
 }
 .quick-new:active { transform: scale(.96); }
 .sidebar-settings { flex: none; width: 100%; border-radius: 14px; }
+#desktop-library[open] { display: flex; flex-direction: column; gap: 12px; width: min(94vw, 680px); height: min(84dvh, 820px); }
+#library-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#library-content { overflow: auto; min-height: 0; flex: 1; overscroll-behavior: contain; }
+#library-content .sidebar-session { width: 100%; text-align: start; min-height: 44px; }
+#library-content .message { margin-block: 12px; }
+#library-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+#library-composer { display: flex; align-items: end; gap: 8px; }
+#library-prompt { flex: 1; min-width: 0; max-height: 25dvh; overflow: auto; }
 .sidebar > .session-context { flex: none; padding: 4px 8px; }
 .sidebar .mode-switch button { flex: 1; }
 .sidebar {
@@ -718,6 +727,13 @@ dialog::backdrop { background: var(--dsw-alias-bg-mask-1); }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+#sidebar-sessions details { min-width: 0; }
+#sidebar-sessions details summary { padding: 10px 6px; cursor: pointer; overflow-wrap: anywhere; }
+#sidebar-sessions details .sidebar-session { margin-left: 12px; width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
+.history-older { display: block; margin: 8px auto 20px; }
+.desktop-file { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.desktop-file-text { max-height: 70dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 
 @media (max-width: 343px) {
   .brand img { width: 26px; height: 26px; }

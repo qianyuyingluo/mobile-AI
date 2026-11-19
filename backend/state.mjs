@@ -24,6 +24,12 @@ export function openState(directory) {
       updated_at INTEGER NOT NULL,
       data TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS desktop_sends (
+      id TEXT PRIMARY KEY,
+      target TEXT NOT NULL,
+      text_hash TEXT NOT NULL,
+      status TEXT NOT NULL
+    );
   `)
   const readSession = db.prepare('SELECT data FROM sessions WHERE id = ?')
   const readSessions = db.prepare('SELECT data, updated_at FROM sessions ORDER BY updated_at DESC')
@@ -45,6 +51,17 @@ export function openState(directory) {
   }
 
   return {
+    reserveDesktopSend(id, target, text) {
+      const hash = digest(text)
+      db.prepare("INSERT OR IGNORE INTO desktop_sends VALUES (?, ?, ?, 'pending')").run(id, target, hash)
+      const row = db.prepare('SELECT * FROM desktop_sends WHERE id=?').get(id)
+      if (row.target !== target || row.text_hash !== hash) throw new Error('发送编号与原消息不一致。')
+      return row.status
+    },
+    finishDesktopSend(id, status) {
+      db.prepare('UPDATE desktop_sends SET status=? WHERE id=?').run(status, id)
+    },
+    desktopSend(id) { return db.prepare('SELECT * FROM desktop_sends WHERE id=?').get(id) },
     pair(label) {
       const token = randomBytes(32).toString('base64url')
       insertDevice.run(digest(token), label, Date.now())
@@ -57,9 +74,9 @@ export function openState(directory) {
     },
     list() { return readSessions.all().map(({ data, updated_at }) => ({ ...JSON.parse(data), updatedAt: updated_at })) },
     delete(id) { deleteSession.run(id) },
-    create(agent, title, resumeId, agentHome) {
+    create(agent, title, resumeId, agentHome, agentCwd) {
       const session = { id: randomUUID(), agent, title, status: 'idle', messages: [], events: [],
-        ...(resumeId && { resumeId }), ...(agentHome && { agentHome }) }
+        ...(resumeId && { resumeId }), ...(agentHome && { agentHome }), ...(agentCwd && { agentCwd }) }
       save(session)
       return session
     },

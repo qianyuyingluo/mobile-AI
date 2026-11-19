@@ -156,7 +156,7 @@ async function build(work) {
   run(join(tools, 'aapt2' + exe), ['compile', '--dir', resources, '-o', compiled])
   run(join(tools, 'aapt2' + exe), ['link', '-I', android, '--manifest',
     join(here, 'AndroidManifest.xml'), '--min-sdk-version', minSdk, '--target-sdk-version', targetSdk,
-    '--version-code', '20', '--version-name', '0.8.4', '-o', unaligned, compiled])
+    '--version-code', '23', '--version-name', '0.8.7', '-o', unaligned, compiled])
   // The Windows aapt2 -A path gives nested assets backslashes in ZIP entry names.
   run(join(javaBin, 'jar' + exe), ['--update', '--file', unaligned, '--no-manifest',
     '-C', work, 'assets', '-C', dex, 'classes.dex'])

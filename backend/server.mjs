@@ -10,6 +10,12 @@ import { discoverAgents, reasoningEfforts, runAgent } from './agents.mjs'
 import { openState, publicSession } from './state.mjs'
 import { createWorkAssistant } from './assistant.mjs'
 import { recentAgentSessions } from './recent-sessions.mjs'
+import { desktopLibrary, historyReader } from './desktop-library.mjs'
+import { desktopFiles } from './desktop-files.mjs'
+import { sendCodexDesktopMessage } from './codex-desktop.mjs'
+import { sendHarnessDesktopMessage } from './harness-desktop.mjs'
+import { installHarnessSync } from './install-harness-sync.mjs'
+import { openDesktopControl, runningDesktop } from './desktop.mjs'
 import { attachmentPrompt, attachmentText, decodeAttachments, imagePaths, saveAttachments } from './work-attachments.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -23,6 +29,8 @@ const previewFiles = new Map([
   ['/control', ['app/mobile/ui/index.html', 'text/html']],
   ['/app.css', ['app/mobile/ui/app.css', 'text/css']],
   ['/app.js', ['app/mobile/ui/app.js', 'text/javascript']],
+  ['/desktop-library.js', ['app/mobile/ui/desktop-library.js', 'text/javascript']],
+  ['/desktop-history.js', ['app/mobile/ui/desktop-history.js', 'text/javascript']],
   ['/http.js', ['app/mobile/ui/http.js', 'text/javascript']],
   ['/event-stream.js', ['app/mobile/ui/event-stream.js', 'text/javascript']],
   ['/image-viewer.js', ['app/mobile/ui/image-viewer.js', 'text/javascript']],
@@ -127,13 +135,14 @@ function protectOutput(env) {
 /** Start the paired computer service for one explicitly selected directory. */
 export async function startServer({
   projectDir = process.cwd(), host = '127.0.0.1', port = 3197, dataDir,
-  env = process.env, agents, runner = runAgent, assistant, recent = recentAgentSessions,
+  env = process.env, agents, runner = runAgent, assistant, recent = recentAgentSessions, syncDesktop = false,
+  desktopSenders = { codex: sendCodexDesktopMessage, deepseek: sendHarnessDesktopMessage },
 } = {}) {
   const projectPath = await realpath(projectDir)
   if (!(await stat(projectPath)).isDirectory()) throw new Error('请选择一个项目文件夹。')
   const project = basename(projectPath) || projectPath
   const projectId = createHash('sha256').update(projectPath).digest('hex').slice(0, 24)
-  const drivers = agents ?? await discoverAgents({ harnessRoot: join(root, 'app'), env })
+  const drivers = agents ?? await discoverAgents({ env })
   const dispatch = assistant ?? createWorkAssistant(env)
   const available = Object.fromEntries(
     ['codex', 'deepseek'].map(key => [key, { available: drivers[key]?.available === true }]),
@@ -152,6 +161,18 @@ export async function startServer({
   const desktopToken = randomBytes(32).toString('base64url')
   let recentCache
   let active
+  let libraryCache
+  const readHistory = historyReader()
+    const files = desktopFiles()
+  const desktopSends = new Map()
+  async function library() {
+    if (!syncDesktop) throw new RequestError(403, '请在电脑上运行 Start-Desktop.cmd 开启工作区同步。')
+    if (!libraryCache || Date.now() >= libraryCache.expires) {
+      libraryCache = { expires: Date.now() + 10000, value: desktopLibrary(env) }
+    }
+    return libraryCache.value
+  }
+  const inScope = session => syncDesktop || !session.agentCwd || session.agentCwd === projectPath
 
   function listRecent() {
     if (!recentCache || Date.now() >= recentCache.expires) {
@@ -178,7 +199,7 @@ export async function startServer({
 
   async function runDirect(session, prompt, signal, files, previews, parent) {
     const result = await runner(drivers[session.agent], {
-      projectDir: projectPath, prompt: attachmentPrompt(prompt, files, previews), resumeId: session.resumeId, signal,
+      projectDir: session.agentCwd || projectPath, prompt: attachmentPrompt(prompt, files, previews), resumeId: session.resumeId, signal,
       ...(session.agentHome && { agentHome: session.agentHome }),
       ...(supportedEfforts[session.agent]?.includes(session.reasoningEffort) && { reasoningEffort: session.reasoningEffort }),
       ...(session.agent === 'codex' && files.length && { images: imagePaths(files) }),
@@ -247,7 +268,8 @@ export async function startServer({
         if (request.method !== 'POST' || !desktopLocal || request.headers.origin !== 'http://' + desktopHost) {
           throw new RequestError(403, '请在本机打开控制页面。')
         }
-        if (pathname === '/v1/control') return json(response, 200, { token: desktopToken, addresses: lanOrigins(host, server.address().port) })
+        if (pathname === '/v1/control') return json(response, 200, { token: desktopToken, desktopLibrary: syncDesktop,
+          addresses: lanOrigins(host, server.address().port) })
         const { origin } = await body(request)
         if (!lanOrigins(host, server.address().port).includes(origin)) throw new RequestError(400, '请选择本机的局域网地址。')
         const code = randomBytes(5).toString('hex').toUpperCase()
@@ -279,13 +301,73 @@ export async function startServer({
       }
 
       if (request.method === 'GET' && pathname === '/v1/work') {
-        const rows = state.list()
-        const imported = new Set(rows.filter(row => row.resumeId).map(row => row.agent + ':' + row.resumeId))
-        const recentSessions = (await listRecent()).filter(row => !imported.has(row.agent + ':' + row.id))
+        const rows = state.list().filter(inScope)
+        const recentSessions = (await listRecent())
           .map(({ agent, id, title, updatedAt, canResume }) => ({ agent, id, title: sanitize(title).slice(0, 120), updatedAt, canResume }))
         const sessions = rows.map(({ id, agent, title, status, updatedAt }) => ({ id, agent, title, status, updatedAt }))
         return json(response, 200, { project: { name: project }, agents: available, sessions, deleteSessions: true,
-          attachments: true, reasoningEfforts: supportedEfforts, recentSessions })
+          attachments: true, reasoningEfforts: supportedEfforts, recentSessions, desktopLibrary: syncDesktop,
+          ...(syncDesktop && { desktopGroups: (await library()).groups }) })
+      }
+      if (request.method === 'GET' && pathname === '/v1/work/library') {
+        const { groups } = await library()
+        return json(response, 200, { groups: groups.map(g => ({ ...g, name: sanitize(g.name),
+          sessions: g.sessions.map(s => ({ ...s, title: sanitize(s.title) })) })) })
+      }
+      const fileRoute = pathname.match(/^\/v1\/work\/library\/(codex|deepseek)\/([\w.-]+)\/files\/([a-f0-9]{64})$/u)
+      if (request.method === 'GET' && fileRoute) {
+        const entry = (await library()).records.get(fileRoute[1] + ':' + fileRoute[2])
+        if (!entry) throw new RequestError(404, '电脑上找不到该对话。')
+        try { return json(response, 200, await files.read(entry, fileRoute[3])) }
+        catch (error) { throw new RequestError(409, error.code === 'ENOENT' ? '文件已移动或删除。' : error.message) }
+      }
+      const historyRoute = pathname.match(/^\/v1\/work\/library\/(codex|deepseek)\/([\w.-]+)$/u)
+      if (request.method === 'POST' && historyRoute) {
+        const key = historyRoute[1] + ':' + historyRoute[2]
+        const entry = (await library()).records.get(key)
+        if (!entry) throw new RequestError(404, '电脑上找不到该对话。')
+        const input = await body(request, 18 * 1024 * 1024)
+        let uploads
+        try { uploads = decodeAttachments(input.attachments) }
+        catch (error) { throw new RequestError(400, error.message) }
+        if (typeof input.text !== 'string' || (!input.text.trim() && !uploads.length) || input.text.length > 20000 ||
+          typeof input.requestId !== 'string' || !/^[a-f0-9-]{36}$/u.test(input.requestId)) throw new RequestError(400, '消息或发送编号无效。')
+        const existing = state.desktopSend(input.requestId)
+          let status
+        const identity = JSON.stringify({ text: input.text, files: uploads.map(f => ({ name: f.name,
+          hash: createHash('sha256').update(f.data).digest('hex') })) })
+        try { status = state.reserveDesktopSend(input.requestId, key, identity) }
+          catch { throw new RequestError(409, '发送编号已用于另一条消息。') }
+        if (status === 'accepted') return json(response, 200, { accepted: true })
+        if (existing && !desktopSends.has(input.requestId)) throw new RequestError(409, '上次发送结果待确认，请先查看电脑原对话。')
+        if (!desktopSends.has(input.requestId)) {
+            const send = desktopSenders[historyRoute[1]]
+          const promise = (async () => {
+            const saved = uploads.length ? await saveAttachments(entry.cwd, uploads) : []
+            return send(historyRoute[2], attachmentPrompt(input.text, saved, attachmentText(uploads, saved)), input.requestId, {
+              attachments: saved.map((f, index) => ({ ...f, path: resolve(entry.cwd, f.path), data: uploads[index].data })),
+            })
+          })()
+            .then(result => { state.finishDesktopSend(input.requestId, 'accepted'); return result })
+            .finally(() => desktopSends.delete(input.requestId))
+          desktopSends.set(input.requestId, promise)
+        }
+          const result = await desktopSends.get(input.requestId).catch(error => {
+            throw new RequestError(503, sanitize(error.message || '桌面发送结果待确认，请查看原对话后重试。'))
+        })
+        return json(response, 200, result)
+      }
+      if (request.method === 'GET' && historyRoute) {
+        const key = historyRoute[1] + ':' + historyRoute[2]
+        const entry = (await library()).records.get(key)
+        if (!entry) throw new RequestError(404, '电脑上找不到该对话。')
+        const cursor = new URL(request.url, 'http://localhost').searchParams.get('before')
+        if (cursor !== null && !/^\d{1,10}$/u.test(cursor)) throw new RequestError(400, '分页位置无效。')
+        const page = await readHistory(entry, cursor === null ? undefined : Number(cursor))
+          .catch(() => { throw new RequestError(409, '电脑端对话文件暂时无法读取。') })
+        return json(response, 200, { ...page, messages: files.expose(entry, page.messages).map(m => ({ ...m, text: sanitize(m.text) })),
+          liveSend: true,
+          canResume: available[entry.agent].available && entry.canResume !== false && (await stat(entry.cwd).catch(() => null))?.isDirectory() === true })
       }
       if (request.method === 'POST' && pathname === '/v1/work/sessions') {
         const input = await body(request)
@@ -293,13 +375,21 @@ export async function startServer({
           throw new RequestError(400, '此 agent 当前不可用。')
         }
         const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : ''
-        if (input.recentId !== undefined) {
-          const entry = (await listRecent()).find(row => row.agent === input.agent && row.id === input.recentId)
+        if (input.libraryId !== undefined || input.recentId !== undefined) {
+          const entry = input.libraryId !== undefined
+            ? (await library()).records.get(input.agent + ':' + input.libraryId)
+            : (await listRecent()).find(row => row.agent === input.agent && row.id === input.recentId)
           if (!entry) throw new RequestError(404, '找不到该电脑会话。')
           if (entry.canResume === false) throw new RequestError(409, '请在电脑端继续使用 Agent 预设的会话。')
+          if (entry.cwd && !(await stat(entry.cwd).catch(() => null))?.isDirectory()) throw new RequestError(409, '原工作目录已不存在。')
           const existing = state.list().find(row => row.agent === entry.agent && row.resumeId === entry.id)
+          if (existing && input.libraryId && !existing.agentCwd) {
+            existing.agentCwd = entry.cwd
+            existing.agentHome = entry.home
+            state.save(existing)
+          }
           return json(response, existing ? 200 : 201, {
-            session: publicSession(existing ?? state.create(entry.agent, sanitize(entry.title).slice(0, 80) || titles[entry.agent], entry.id, entry.home)),
+            session: publicSession(existing ?? state.create(entry.agent, sanitize(entry.title).slice(0, 80) || titles[entry.agent], entry.id, entry.home, entry.cwd)),
           })
         }
         return json(response, 201, { session: publicSession(state.create(input.agent, title || titles[input.agent])) })
@@ -308,7 +398,7 @@ export async function startServer({
       if (!route) throw new RequestError(404, '页面不存在。')
       const [_, id, action] = route
       let session = state.get(id)
-      if (!session) throw new RequestError(404, '找不到该会话。')
+      if (!session || !inScope(session)) throw new RequestError(404, '找不到该会话。')
       if (request.method === 'GET' && !action) return json(response, 200, { session: publicSession(session) })
       if (request.method === 'DELETE' && !action) {
         request.resume()
@@ -339,7 +429,7 @@ export async function startServer({
         const job = { id, controller }
         active = job
         try {
-          const files = uploads.length ? await saveAttachments(projectPath, uploads) : []
+          const files = uploads.length ? await saveAttachments(session.agentCwd || projectPath, uploads) : []
           if (effort === '') delete session.reasoningEffort
           else if (effort !== undefined) session.reasoningEffort = effort
           session.events = session.events.filter(event => event.type === 'dispatch')
@@ -391,22 +481,34 @@ export async function startServer({
 async function main() {
   const { values } = parseArgs({ options: {
     project: { type: 'string' }, host: { type: 'string' }, port: { type: 'string' },
-    lan: { type: 'boolean' }, qr: { type: 'boolean' }, 'data-dir': { type: 'string' }, help: { type: 'boolean' },
+    lan: { type: 'boolean' }, qr: { type: 'boolean' }, desktop: { type: 'boolean' }, 'data-dir': { type: 'string' }, help: { type: 'boolean' },
   } })
   if (values.help) {
-    console.log('node backend/server.mjs --project <项目目录> [--lan | --host <本地 IP>] [--port 3197] [--qr]')
+    console.log('node backend/server.mjs [--project <项目目录>] [--lan | --host <本地 IP>] [--port 3197] [--qr] [--desktop]')
     return
   }
   const port = Number(values.port ?? process.env.YINGLUO_PORT ?? '3197')
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('端口必须是 0–65535 之间的整数。')
   if (values.lan && values.host) throw new Error('请选择 --lan 或 --host。')
+  if (values.desktop && values.host) throw new Error('电脑控制页请使用 --desktop 单独启动。')
+  const explicitProject = values.project ?? process.env.YINGLUO_PROJECT_DIR
+  if (values.desktop && !explicitProject && await runningDesktop(port)) {
+    openDesktopControl(port)
+    return
+  }
+  const defaultProject = process.cwd() === join(root, 'backend') ? root : process.cwd()
   const service = await startServer({
-    projectDir: values.project ?? process.env.YINGLUO_PROJECT_DIR ??
-      (process.cwd() === join(root, 'backend') ? root : process.cwd()),
-    host: values.host ?? (values.lan ? '0.0.0.0' : '127.0.0.1'),
+    syncDesktop: values.desktop,
+    projectDir: explicitProject ?? defaultProject,
+    host: values.host ?? (values.lan || values.desktop ? '0.0.0.0' : '127.0.0.1'),
     port, dataDir: values['data-dir'] ?? process.env.YINGLUO_DATA_DIR,
   })
+  if (values.desktop) {
+    try { await installHarnessSync() }
+    catch (error) { await service.close(); throw error }
+  }
   console.log('项目  ' + service.project)
+  if (values.desktop) openDesktopControl(service.port)
   const origins = lanOrigins(service.host, service.port)
   for (const origin of origins) console.log('Work 地址  ' + origin)
   if (['0.0.0.0', '127.0.0.1'].includes(service.host)) {

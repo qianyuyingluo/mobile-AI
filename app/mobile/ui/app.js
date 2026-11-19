@@ -2,6 +2,8 @@ import { readSecret, requestJson, requestStream, saveSecret, workOrigin } from '
 import { chatKeysRecord, streamingChatRequest, chatStreamReader, configuredChatProviders, findChatModel, restoreChatKeys, restoreChatModels } from './chat-providers.js'
 import { createImageViewer } from './image-viewer.js'
 import { createReadingNavigation } from './reading-navigation.js'
+import { mountDesktopLibrary } from './desktop-library.js'
+import { desktopHistory, desktopRequestId } from './desktop-history.js'
 import { supportsWebSearch, sourceUrl } from './chat-providers.js'
 
 const $ = id => document.getElementById(id)
@@ -73,6 +75,7 @@ const work = {
 }
 let poll = null
 let pollTimer = null
+let loadingDesktopHistory = false
 let threadKey = ''
 let threadStructure = ''
 let mountedRichMessages = []
@@ -138,7 +141,8 @@ function chatReady() {
 }
 
 function persistConnection() {
-  store(connectionKey, { origin: work.token && work.canResume ? work.origin : '', selected: work.selected })
+  store(connectionKey, { origin: work.token && work.canResume ? work.origin : '', selected: work.selected,
+    desktop: work.desktop })
 }
 
 function node(tag, text, className) {
@@ -187,6 +191,7 @@ function beginNewConversation() {
   chat.selected = ''
   chat.error = ''
   work.selected = ''
+  work.desktop = null
   work.session = null
   work.error = ''
   draftingWork = true
@@ -465,6 +470,8 @@ function openDesktopPairing() {
 async function initializeDesktop() {
   document.title = '绫音 · 电脑控制'
   $('open-settings').textContent = '手机配对'
+  $('desktop-pair').hidden = false
+  $('desktop-pair').addEventListener('click', openDesktopPairing)
   try {
     const { token, addresses } = await requestJson('/v1/control', { method: 'POST', data: {} })
     desktopAddresses = addresses.filter(address => new URL(address).hostname !== '127.0.0.1')
@@ -524,6 +531,11 @@ function renderSidebar() {
   const locked = !inChat && Boolean(work.action)
   const supportsDelete = inChat || work.summary?.deleteSessions === true
   const recent = inChat ? [] : work.summary?.recentSessions ?? []
+  $('open-library').hidden = inChat || !work.summary?.desktopLibrary
+  if (!inChat && work.summary?.desktopGroups) {
+    renderDesktopSidebar(work.summary.desktopGroups)
+    return
+  }
   const upgradeNotice = !inChat && work.summary && !supportsDelete ? '更新并重启电脑端 Work 服务后即可删除会话。' : ''
   feedback($('sidebar-error'), inChat ? '' : work.deleteError || work.error || upgradeNotice)
   const key = JSON.stringify([mode, project, selected, running, linked(), locked, supportsDelete,
@@ -588,6 +600,42 @@ function renderSidebar() {
   })
   recentList.replaceChildren(...recentRows)
   $('recent-empty').hidden = recentHeader.hidden || recent.length > 0
+}
+
+function renderDesktopSidebar(groups) {
+  const key = JSON.stringify([groups, work.desktop, work.error])
+  if (key === sidebarKey) return
+  sidebarKey = key
+  feedback($('sidebar-error'), work.error)
+  $('sidebar-group').textContent = '项目与工作区'
+  $('sidebar-project').textContent = ''
+  $('recent-header').hidden = true
+  $('recent-empty').hidden = true
+  $('recent-sessions').replaceChildren()
+  $('sidebar-empty').hidden = true
+  const container = $('sidebar-sessions')
+  const expanded = new Set([...container.querySelectorAll('details[open]')].map(d => d.dataset.key))
+  container.replaceChildren()
+  for (const agent of ['codex', 'deepseek']) {
+    container.append(node('li', agentNames[agent], 'sidebar-label'))
+    for (const group of groups.filter(g => g.agent === agent)) {
+      const row = node('li'), details = node('details'), summary = node('summary', '📁 ' + group.name)
+      details.dataset.key = agent + ':' + group.id
+      details.open = expanded.has(details.dataset.key) || group.sessions.some(s => s.id === work.desktop?.id && agent === work.desktop?.agent)
+      details.append(summary)
+      for (const session of group.sessions) {
+        const open = button(session.title, () => {
+          work.desktop = { agent, id: session.id, title: session.title }
+          work.selected = ''; work.session = null; work.sendError = ''; draftingWork = false
+          attachments.work = []; resetScroll = true
+          persistConnection(); sidebar.close(); render(); void refreshWork()
+        }, 'sidebar-session')
+        if (session.id === work.desktop?.id && agent === work.desktop?.agent) open.setAttribute('aria-current', 'true')
+        details.append(open)
+      }
+      row.append(details); container.append(row)
+    }
+  }
 }
 
 function confirmSessionDeletion(session) {
@@ -655,7 +703,8 @@ function renderEmpty(session) {
   if (!work.summary) {
     return emptyState('连接电脑', work.error || '正在读取电脑上的项目…', '重试', refreshWork)
   }
-  if (work.selected) return emptyState('加载会话', work.error || '正在读取电脑上的会话…')
+  if (work.selected || work.desktop) return emptyState('加载会话', work.error || '正在读取电脑上的会话…')
+  if (work.summary.desktopGroups) return emptyState('电脑上的会话', '从左上角展开项目与工作区，选择要继续的会话。', '查看项目与工作区', () => sidebar.showModal())
   return emptyState('开始 Work', '选择一个助手，开始处理当前项目。', '选择助手', openAgentPicker)
 }
 
@@ -738,6 +787,12 @@ function messageRow(message, assistantName, richMessages) {
 }
 
 function attachmentItem(file, removable) {
+  if (!removable && file.desktopFile) {
+    const open = button((file.type?.startsWith('image/') ? '▧ ' : '▤ ') + file.name,
+      () => void openDesktopFile(file, open), 'control desktop-file')
+    if (file.description) open.title = file.description
+    return open
+  }
   const item = node('span', '', 'attachment')
   if (file.data && imageTypes.includes(file.type) && (!removable || mode === 'chat')) {
     const preview = node('img')
@@ -768,6 +823,32 @@ function attachmentItem(file, removable) {
   return item
 }
 
+async function openDesktopFile(file, control) {
+  const selected = { agent: file.desktopAgent, id: file.desktopSession }
+  if (!selected.agent || !selected.id) return
+  control.disabled = true
+  try {
+    const result = await workRequest('/library/' + selected.agent + '/' + encodeURIComponent(selected.id) + '/files/' + file.desktopFile,
+      { timeout: 60000 })
+    if (imageTypes.includes(result.type)) { viewImages([result], 0); return }
+    const dialog = node('dialog'), header = node('div', '', 'dialog-head')
+    header.append(node('h2', result.name), button('关闭', () => dialog.close()))
+    dialog.append(header)
+    const bytes = Uint8Array.from(atob(result.data), c => c.charCodeAt(0))
+    if (/\.(?:txt|md|py|js|ts|json|csv|log|yaml|yml|tex|html|css|cpp|c|h|rs|go|java|xml)$/iu.test(result.name)) {
+      const pre = node('pre', new TextDecoder().decode(bytes.subarray(0, 1024 * 1024)), 'desktop-file-text')
+      dialog.append(pre)
+      if (bytes.length > 1024 * 1024) dialog.append(node('p', '文件较长，预览显示前 1 MB。'))
+    } else dialog.append(node('p', '文件大小：' + result.size + ' 字节。此格式请在电脑上打开。'))
+    document.body.append(dialog)
+    dialog.addEventListener('close', () => dialog.remove(), { once: true })
+    dialog.showModal()
+  } catch (error) {
+    work.sendError = error.detail || '文件无法读取，请刷新会话后重试。'
+    render()
+  } finally { control.disabled = false }
+}
+
 function renderComposerOptions(inChat, disabled) {
   const files = attachments[mode]
   const list = $('attachment-list')
@@ -777,7 +858,7 @@ function renderComposerOptions(inChat, disabled) {
   $('attach').setAttribute('aria-label', inChat ? '添加图片' : '添加文件')
   $('attach').title = inChat ? '添加图片' : '添加文件'
   const effort = $('work-effort')
-  const levels = inChat ? [] : work.summary?.reasoningEfforts?.[work.session?.agent] ?? []
+  const levels = inChat || work.desktop ? [] : work.summary?.reasoningEfforts?.[work.session?.agent] ?? []
   effort.hidden = levels.length === 0
   workEffortPicker?.update({ levels, disabled, value: levels.includes(workEffort) ? workEffort : '',
     model: work.session?.agent === 'codex' ? 'Codex' : 'DeepSeek Harness' })
@@ -803,7 +884,7 @@ function renderThread() {
   const messages = session?.messages ?? []
   const events = inChat ? [] : session?.events ?? []
   const key = JSON.stringify([mode, session?.id, messages, events, Boolean(renderMarkdownMessages),
-    inChat ? [selection, chatReady()] : [linked(), Boolean(work.summary), work.selected, work.error]])
+    inChat ? [selection, chatReady()] : [linked(), Boolean(work.summary), work.selected, work.error, session?.historyBefore, loadingDesktopHistory]])
   if (key === threadKey) {
     if (resetScroll) { readingNavigation.latest(); resetScroll = false }
     return
@@ -812,7 +893,7 @@ function renderThread() {
   const previousTop = readingNavigation.beforeRender(resetScroll)
   const structure = JSON.stringify([mode, session?.id, messages.map(message => [message.role,
     message.role === 'user' || !renderMarkdownMessages ? message.text : '', message.attachments, message.interrupted]), events,
-    Boolean(renderMarkdownMessages), messages.length ? '' : key])
+    Boolean(renderMarkdownMessages), session?.historyBefore, loadingDesktopHistory, messages.length ? '' : key])
   if (structure === threadStructure && unmountMarkdown?.update) {
     const assistants = messages.filter(message => message.role !== 'user')
     mountedRichMessages.forEach((entry, index) => {
@@ -831,6 +912,11 @@ function renderThread() {
   const assistantName = inChat ? '绫音' : agentNames[session?.agent] ?? '助手'
   const richMessages = []
   const rows = messages.map(message => messageRow(message, assistantName, richMessages))
+  if (!inChat && work.desktop && session?.historyBefore > 0) {
+    const older = button(loadingDesktopHistory ? '正在加载…' : '加载更早的消息', loadDesktopHistory, 'control history-older')
+    older.disabled = loadingDesktopHistory
+    rows.unshift(older)
+  }
   if (rows.length === 0 && events.length === 0) rows.push(renderEmpty(session))
   if (events.length) rows.push(eventList(events, eventOpen))
   unmountMarkdown?.()
@@ -855,7 +941,9 @@ function render() {
   const inChat = mode === 'chat'
   const busy = inChat ? Boolean(chat.run) : Boolean(work.action)
   const running = inChat ? Boolean(chat.run) : work.session?.status === 'running'
-  const error = inChat ? chat.error : work.error
+  const taskError = work.session?.status === 'failed'
+    ? work.session.events?.filter(event => event.type === 'error').at(-1)?.text : ''
+  const error = inChat ? chat.error : work.sendError || work.error || taskError
   const ready = inChat ? chatReady() : Boolean(work.session)
   const searchModel = selectedChatModel()
   const searchSupported = inChat && supportsWebSearch(searchModel?.provider, searchModel?.model.id)
@@ -935,13 +1023,21 @@ async function refreshWork(includeList = true) {
       const summary = await workRequest('', { signal: controller.signal })
       if (controller.signal.aborted) return
       work.summary = summary
-      if (!summary.sessions.some(session => session.id === work.selected)) {
+      if (!work.desktop && !summary.sessions.some(session => session.id === work.selected)) {
         work.selected = draftingWork ? '' : summary.sessions[0]?.id ?? ''
         work.session = null
         persistConnection()
       }
     }
-    if (work.selected) {
+    if (work.desktop) {
+      const selected = work.desktop
+      const route = '/library/' + selected.agent + '/' + encodeURIComponent(selected.id)
+      const page = await desktopHistory(before => workRequest(route + (before === undefined ? '' : '?before=' + before),
+        { signal: controller.signal, timeout: 60000 }), work.session?.id === selected.id ? work.session.historyBefore : undefined)
+      if (controller.signal.aborted || work.desktop !== selected) return
+      work.session = { id: selected.id, agent: selected.agent, title: selected.title, status: 'idle',
+        messages: page.messages, events: [], historyBefore: page.before, historyTotal: page.total }
+    } else if (work.selected) {
       const { session } = await workRequest('/sessions/' + encodeURIComponent(work.selected), { signal: controller.signal })
       if (controller.signal.aborted) return
       if (session.id !== work.session?.id) workEffort = session.reasoningEffort ?? ''
@@ -962,9 +1058,28 @@ async function refreshWork(includeList = true) {
   }
 }
 
+async function loadDesktopHistory() {
+  if (loadingDesktopHistory || !work.desktop || !work.session?.historyBefore) return
+  const selected = work.desktop
+  stopPolling()
+  loadingDesktopHistory = true
+  render()
+  const height = transcript.scrollHeight, top = transcript.scrollTop
+  try {
+    const page = await workRequest('/library/' + selected.agent + '/' + encodeURIComponent(selected.id) + '?before=' + work.session.historyBefore)
+    if (work.desktop !== selected) return
+    work.session.messages.unshift(...page.messages)
+    work.session.historyBefore = page.before
+    render()
+    transcript.scrollTop = top + transcript.scrollHeight - height
+  } catch (error) { work.error = connectionError(error) }
+  finally { loadingDesktopHistory = false; render(); void refreshWork(false) }
+}
+
 function selectWork(id) {
   if (mode !== 'work' || !linked() || work.action) return
   work.selected = id
+  work.desktop = null
   draftingWork = false
   work.session = null
   attachments.work = []
@@ -1197,6 +1312,7 @@ async function sendChat(text) {
 }
 
 function sendWork(text) {
+  if (work.desktop) { void sendDesktop(text); return }
   if (!work.session || work.session.status === 'running' || work.action) return
   const id = encodeURIComponent(work.selected)
   const files = attachments.work
@@ -1224,6 +1340,38 @@ function sendWork(text) {
     if (mode === 'work' && !drafts.work) saveDraft(text)
     else if (!drafts.work) drafts.work = text
   })
+}
+
+async function sendDesktop(text) {
+  const files = attachments.work
+  if (work.action || (!text.trim() && !files.length)) return
+  const selected = work.desktop
+  work.sendError = ''
+  const key = 'ayane.desktop-send.' + work.origin + '.' + selected.agent + '.' + selected.id
+  // Small retry fingerprint; the server additionally verifies the complete SHA-256 of every file.
+  let fingerprint = 2166136261
+  for (const file of files) for (const char of file.name + ':' + file.data) fingerprint = Math.imul(fingerprint ^ char.charCodeAt(0), 16777619) >>> 0
+  const fileKey = files.length ? String(fingerprint) : ''
+  let receipt = read(key, null)
+  if (!receipt || receipt.text !== text || (receipt.fileKey || '') !== fileKey) receipt = { text, fileKey, requestId: desktopRequestId() }
+  store(key, receipt)
+  work.action = 'send'
+  stopPolling(); render()
+  try {
+    await workRequest('/library/' + selected.agent + '/' + encodeURIComponent(selected.id), {
+      method: 'POST', data: { ...receipt, ...(files.length && { attachments: files.map(({ name, data }) => ({ name, data })) }) }, timeout: 90000,
+    })
+    localStorage.removeItem(key)
+    if (work.desktop === selected) {
+      if (attachments.work === files) attachments.work = []
+      saveDraft(''); composerEditing = false; prompt.blur(); readingNavigation.latest()
+    }
+    work.error = ''
+  } catch (error) {
+    work.sendError = error.detail || '发送结果待确认，请查看原对话最新消息。重试将使用同一发送编号。'
+  } finally {
+    work.action = ''; render(); void refreshWork()
+  }
 }
 
 async function pair(event) {
@@ -1287,6 +1435,23 @@ scanDialog.addEventListener('close', () => {
   scanPreview.srcObject?.getTracks().forEach(track => track.stop())
 })
 $('new-qr').addEventListener('click', () => void refreshDesktopQr())
+mountDesktopLibrary({
+  connection: () => work.origin,
+  request: workRequest,
+  renderMessages(messages, agent, root) {
+    const rich = []
+    root.replaceChildren(...messages.map(m => messageRow(m, agentNames[agent], rich)))
+    return rich.length ? renderMarkdownMessages(rich) : undefined
+  },
+  resume(agent, id) {
+    sidebar.close()
+    const entry = work.summary?.desktopGroups?.filter(g => g.agent === agent).flatMap(g => g.sessions).find(s => s.id === id)
+    work.desktop = { agent, id, title: entry?.title || '电脑会话' }
+    work.selected = ''; work.session = null; work.sendError = ''; draftingWork = false
+    attachments.work = []; resetScroll = true
+    persistConnection(); render(); void refreshWork()
+  },
+})
 $('pair-addresses').addEventListener('change', () => void refreshDesktopQr())
 $('open-sidebar').addEventListener('click', () => {
   if (mode === 'work') work.deleteError = ''

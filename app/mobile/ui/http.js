@@ -126,6 +126,10 @@ export async function requestJson(url, { method = 'GET', token, headers: extraHe
   if (result.status < 200 || result.status > 299) {
     const error = new Error('HTTP request failed')
     error.status = result.status
+    try {
+      const detail = JSON.parse(result.text)?.error
+      if (typeof detail === 'string') error.detail = detail.slice(0, 400)
+    } catch { /* Non-JSON error pages have no application detail. */ }
     throw error
   }
   return JSON.parse(result.text)

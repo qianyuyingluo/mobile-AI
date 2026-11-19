@@ -1,6 +1,6 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, normalize, toNamespacedPath } from 'node:path'
+import { isAbsolute, join, normalize, toNamespacedPath } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { zstdDecompressSync } from 'node:zlib'
 
@@ -12,7 +12,7 @@ const pathKey = path => {
   return isWindows ? key.toLowerCase() : key
 }
 const entries = directory => readdir(directory, { withFileTypes: true }).catch(() => [])
-const projectFolder = project => {
+export const projectFolder = project => {
   const slug = project.replace(/[/:\\]+/gu, '-').replace(/[^A-Za-z0-9._-]/g,
     character => '~' + character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'))
     .replace(/^-+/u, '') || 'root'
@@ -63,12 +63,12 @@ async function harnessPrefix(file) {
   } finally { await source.close() }
 }
 
-async function harnessMetadata(file, project) {
+export async function harnessMetadata(file, project) {
   try {
     const [first, ...lines] = (await harnessPrefix(file)).split('\n').slice(0, -1)
     const header = JSON.parse(first)
     if (header.type !== 'session' || !idPattern.test(header.id ?? '') ||
-      typeof header.cwd !== 'string' || pathKey(header.cwd) !== pathKey(project) ||
+      typeof header.cwd !== 'string' || !isAbsolute(header.cwd) || (project && pathKey(header.cwd) !== pathKey(project)) ||
       header.delegationDepth > 0 || header.origin === 'subagent') return null
     let title
     let canResume = !header.agentPreset
@@ -78,14 +78,13 @@ async function harnessMetadata(file, project) {
       if (event.type === 'session/title' && typeof event.data?.title === 'string') title = event.data.title
       if (event.type === 'agent-preset/selected') canResume = false
     }
-    return { id: header.id, title: title?.trim() || 'Harness · ' + header.id.slice(-8), canResume }
+    return { id: header.id, cwd: header.cwd, title: title?.trim() || 'Harness · ' + header.id.slice(-8), canResume }
   } catch {
     return null
   }
 }
 
-async function harnessRecent(project, home) {
-  const folder = join(home, 'sessions', projectFolder(project))
+export async function harnessCandidates(folder) {
   const candidates = []
   for (const session of await entries(folder)) {
     if (!session.isDirectory()) continue
@@ -97,7 +96,11 @@ async function harnessRecent(project, home) {
     const info = await stat(file).catch(() => null)
     if (info) candidates.push({ file, updatedAt: info.mtimeMs })
   }
-  candidates.sort((a, b) => b.updatedAt - a.updatedAt)
+  return candidates.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+async function harnessRecent(project, home) {
+  const candidates = await harnessCandidates(join(home, 'sessions', projectFolder(project)))
   const results = []
   for (const { file, updatedAt } of candidates) {
     const row = await harnessMetadata(file, project)
@@ -107,14 +110,34 @@ async function harnessRecent(project, home) {
   return results
 }
 
+function harnessHomes(env) {
+  return [env.DSH_HOME || join(homedir(), '.dsh')]
+}
+
+// The desktop operator chooses which existing workspace to expose to the phone.
+export async function recentHarnessProjects(env = process.env) {
+  const projects = new Map()
+  for (const home of harnessHomes(env)) {
+    const root = join(home, 'sessions')
+    for (const folder of await entries(root)) {
+      if (!folder.isDirectory()) continue
+      for (const { file, updatedAt } of await harnessCandidates(join(root, folder.name))) {
+        const row = await harnessMetadata(file)
+        if (!row || pathKey(projectFolder(row.cwd)) !== pathKey(folder.name)) continue
+        if (!(await stat(row.cwd).catch(() => null))?.isDirectory()) break
+        const key = pathKey(row.cwd)
+        if (!projects.has(key) || projects.get(key).updatedAt < updatedAt) projects.set(key, { path: row.cwd, updatedAt })
+        break
+      }
+    }
+  }
+  return [...projects.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export async function recentAgentSessions(project, env, available) {
-  const harnessHomes = env.DSH_HOME ? [env.DSH_HOME] : [
-    join(homedir(), '.dsh'),
-    ...(isWindows && env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, 'YingluoHarness')] : []),
-  ]
   const records = await Promise.all([
     available.codex.available ? codexRecent(project, env.CODEX_HOME || join(homedir(), '.codex')) : [],
-    ...harnessHomes.map(home => available.deepseek.available ? harnessRecent(project, home) : []),
+    ...harnessHomes(env).map(home => available.deepseek.available ? harnessRecent(project, home) : []),
   ])
   const sorted = records.flat().filter(row => idPattern.test(row.id ?? '')).sort((a, b) => b.updatedAt - a.updatedAt)
   const seen = new Set()

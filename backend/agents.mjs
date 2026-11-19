@@ -1,9 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 
 const exec = promisify(execFile)
@@ -73,24 +71,6 @@ async function installedExecutable(roots, relativePath) {
   return undefined
 }
 
-function checkoutDsh(harnessRoot) {
-  if (!harnessRoot) return undefined
-  const builtin = resolve(harnessRoot, 'apps', 'cli', 'lib', 'bin.js')
-  try {
-    const importer = createRequire(builtin)
-    importer.resolve('@deepseek-ai/dsh-app-boot')
-    try {
-      importer.resolve(builtin)
-      return { command: process.execPath, prefix: [builtin] }
-    } catch {
-      const source = importer.resolve(resolve(harnessRoot, 'apps', 'cli', 'src', 'bin.ts'))
-      return { command: process.execPath, prefix: ['--import', pathToFileURL(importer.resolve('tsx/esm')).href, source] }
-    }
-  } catch {
-    return undefined
-  }
-}
-
 function agentDescriptor(id, launch, override, name) {
   if (launch) return { id, available: true, ...launch }
   const reason = override
@@ -99,25 +79,23 @@ function agentDescriptor(id, launch, override, name) {
   return { id, available: false, reason }
 }
 
-export async function discoverAgents({ harnessRoot, env = process.env } = {}) {
+export async function discoverAgents({ env = process.env } = {}) {
   const codexOverride = readEnv(env, 'YINGLUO_CODEX_COMMAND')?.trim()
   const dshOverride = readEnv(env, 'YINGLUO_DSH_COMMAND')?.trim()
   let [codex, dsh] = await Promise.all([
     findCommand(codexOverride || 'codex', env),
     findCommand(dshOverride || 'dsh', env),
   ])
-  const localHarness = !dshOverride ? checkoutDsh(harnessRoot) : undefined
-  if ((!codex && !codexOverride) || (!dsh && !dshOverride && !localHarness)) {
+  if ((!codex && !codexOverride) || (!dshOverride && isWindows)) {
     const roots = await windowsInstallRoots(env)
     if (!codex && !codexOverride) codex = await installedExecutable(roots.codex, ['app', 'resources', 'codex.exe'])
-    if (!dsh && !dshOverride && !localHarness) {
-      dsh = await installedExecutable(roots.harness, ['resources', 'runtime', 'cli', 'bin', 'dsh.cmd'])
+    if (!dshOverride && isWindows) {
+      dsh = await installedExecutable(roots.harness, ['resources', 'runtime', 'cli', 'bin', 'dsh.cmd']) ?? dsh
     }
   }
   return {
     codex: agentDescriptor('codex', codex && { command: codex, prefix: [] }, codexOverride && 'YINGLUO_CODEX_COMMAND', 'Codex'),
-    deepseek: agentDescriptor('deepseek', localHarness ? { ...localHarness, supportsReasoning: true }
-      : dsh && { command: dsh, prefix: [], supportsReasoning: false },
+    deepseek: agentDescriptor('deepseek', dsh && { command: dsh, prefix: [], supportsReasoning: false },
       dshOverride && 'YINGLUO_DSH_COMMAND', 'DeepSeek Harness'),
   }
 }
@@ -178,6 +156,9 @@ function reportFailure(failure, agent) {
   // Provider errors can include a request body, URL, or credentials. Inspect
   // them here and report only fixed, actionable diagnostics to the phone.
   const details = typeof failure === 'string' ? failure : JSON.stringify(failure ?? '')
+  if (agent.id === 'deepseek' && /MISSING_CREDENTIAL/iu.test(details) && details.includes('DEEPSEEK_API_KEY')) {
+    return '电脑端 DeepSeek 缺少 API Key。请在电脑的 Harness 设置 → 模型 → DeepSeek 中填写，或设置 DEEPSEEK_API_KEY 后重启 Work。'
+  }
   if (/missing.credential|no api key|api key is missing|missing.*key|not logged in|\b401\b|unauthorized|incorrect api key|invalid.credential|authentication/iu.test(details)) {
     return agent.id === 'codex'
       ? 'Codex 认证失败。请在电脑上登录 Codex 或配置所需的 API 密钥。'

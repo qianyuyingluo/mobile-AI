@@ -25,9 +25,12 @@ export function decodeAttachments(input) {
 }
 
 export async function saveAttachments(project, files) {
-  const root = join(project, directoryName)
+  // Codex stores Windows cwd with a \\?\ prefix. Canonicalize the parent
+  // before checking the upload directory, so equivalent paths are accepted.
+  const parent = await realpath(project)
+  const root = join(parent, directoryName)
   await mkdir(root, { recursive: true, mode: 0o700 })
-  if (await realpath(root) !== root) throw new Error('项目上传目录必须是项目内的实际目录。')
+  if (relative(parent, await realpath(root)) !== directoryName) throw new Error('项目上传目录必须是项目内的实际目录。')
   const folder = await mkdtemp(join(root, 'turn-'))
   try {
     const saved = []
@@ -38,7 +41,7 @@ export async function saveAttachments(project, files) {
       await writeFile(filePath, file.data, { flag: 'wx', mode: 0o600 })
       saved.push({
         name: file.name, size: file.data.length,
-        path: relative(project, filePath).split(sep).join('/'),
+        path: relative(parent, filePath).split(sep).join('/'),
       })
     }
     return saved

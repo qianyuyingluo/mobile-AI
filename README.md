@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.4**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
+**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.7**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
 
 | 模式 | 用途 | 是否需要电脑运行 |
 | --- | --- | --- |
@@ -26,6 +26,16 @@
 新建对话时，顶部可以选择 Chat / Work；发送第一条消息后隐藏模式选择。右上角圆形「＋」用于新建对话，输入框左侧「＋」用于添加附件。左右顶部入口的底框以 20% 不透明度显示，文字、头像和图标保持清晰；点击输入框开始编辑时，才展开附件、联网、模型和发送工具栏，发送后收起。
 
 ### 连接电脑处理项目
+
+Windows 双击根目录的 [Start-Desktop.cmd](Start-Desktop.cmd)，启动器会打开电脑控制页。点击「手机配对」生成二维码。已配对手机进入 Work，点击左上角头像，在侧栏直接展开 Codex 项目或 DeepSeek Harness 工作区，再选择原有会话。历史消息按页读取，顶部可加载更早的消息；连接恢复后重新读取电脑记录。
+
+同步源是**电脑已安装的软件**：Codex 使用 `%USERPROFILE%\.codex` 的项目与历史数据库，Harness 使用 `%USERPROFILE%\.dsh` 的工作区与会话记录。支持 `CODEX_HOME`、`DSH_HOME` 指定实际数据目录。`deepseek-harness/` 源码副本不参与同步。
+
+手机发送文字时，Codex 通过桌面会话 IPC 接口写入原会话，Harness 通过已安装桌面的同步插件写入原会话。两款桌面软件需要保持运行；如果 Codex 提示找不到会话处理端，先在桌面打开该会话。此接口随桌面版本变化，当前在 Codex 26.1111.2228 上验证。
+
+启动器会为 Harness 的 desktop profile 加入 `ayane-desktop-sync` 插件，并将原配置备份到 `%LOCALAPPDATA%\YingluoWork\desktop-patch-*.backup`。插件按内容版本复制到该目录，升级时更新自己的插件路径。插件只监听电脑回环地址，并使用随机令牌；局域网请求仍需绫音配对。首次配置或插件升级后，请重新打开 Harness。
+
+桌面原会话同步支持用户/助手文字与 Markdown，并以轮询更新已保存的消息。附件上传到原会话的项目目录；图片作为模型图片输入发送，Harness 需运行新版同步插件。已记录的图片附件与 Harness 生成文件显示为文件卡片，可点开图片和文本预览（单文件最多 5 MB，文本预览前 1 MB）。文件必须仍存在于会话工作区或软件附件目录中。工具卡片和审批操作尚未接入这条同步通道。
 
 电脑准备 **Node.js 24.9 或更高版本**，并至少配置好 Codex 或 DeepSeek Harness 中的一种。下列命令均在本项目根目录运行；把项目路径换成希望 agent 操作的目录。
 
@@ -175,7 +185,7 @@ node app/mobile/android/build.mjs
 ### 本地验证
 
 ```powershell
-node --test backend/agents.test.mjs backend/server.test.mjs
+node --test backend/agents.test.mjs backend/server.test.mjs backend/desktop-sync.test.mjs
 node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
 node app/mobile/ui-smoke.mjs
 node app/mobile/reading-navigation-smoke.mjs
@@ -204,4 +214,3 @@ node app/mobile/reading-navigation-smoke.mjs
 ## 上游
 
 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 定制。上游使用与开发说明保留在 [`app/README.md`](app/README.md) 中；分发时请保留项目所附的上游许可与第三方声明。
-"# yingluo-neko" 

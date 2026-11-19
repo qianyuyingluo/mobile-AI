@@ -25,7 +25,10 @@
         <button type="button" id="chat-mode" aria-pressed="true">Chat</button>
         <button type="button" id="work-mode" aria-pressed="false">Work</button>
       </nav>
-      <button type="button" id="quick-new-session" class="quick-new" aria-label="新建对话" title="新建对话">＋</button>
+      <div class="topbar-actions">
+        <button type="button" id="desktop-pair" class="control" hidden>手机配对</button>
+        <button type="button" id="quick-new-session" class="quick-new" aria-label="新建对话" title="新建对话">＋</button>
+      </div>
     </header>
 
     <section class="conversation" aria-label="对话">
@@ -80,6 +83,7 @@
       <button type="button" id="chat-history">聊天记录</button>
       <button type="button" id="work-history">电脑会话</button>
     </nav>
+    <button type="button" id="open-library" class="control sidebar-settings" hidden>项目与工作区</button>
     <nav class="sidebar-history" aria-labelledby="sidebar-group">
       <h2 id="sidebar-group" class="sidebar-label">会话</h2>
       <p id="sidebar-project" class="sidebar-project"></p>
@@ -92,6 +96,28 @@
     <p id="sidebar-error" class="form-error" role="alert" hidden></p>
     <button type="button" id="oppo-live-updates" class="control" hidden>OPPO 实况通知</button>
     <button type="button" id="open-settings" class="control sidebar-settings">设置</button>
+  </dialog>
+
+  <dialog id="desktop-library" aria-labelledby="library-title">
+    <div class="dialog-head">
+      <button type="button" class="control" id="library-back" hidden>返回</button>
+      <h2 id="library-title">项目与工作区</h2><button type="button" class="control" data-close>关闭</button>
+    </div>
+    <p id="library-status" class="form-error" role="status" hidden></p>
+    <nav id="library-agents" class="mode-switch" aria-label="桌面软件">
+      <button type="button" data-agent="codex">Codex</button>
+      <button type="button" data-agent="deepseek">DeepSeek Harness</button>
+    </nav>
+    <div id="library-content"></div>
+    <div id="library-tools" hidden>
+      <button type="button" class="control" id="library-older">更早消息</button>
+      <button type="button" class="control" id="library-latest">最新消息</button>
+      <button type="button" class="control" id="library-resume">继续此对话</button>
+    </div>
+    <form id="library-composer" hidden>
+      <textarea id="library-prompt" rows="3" placeholder="发送到电脑上的此对话" aria-label="发送到电脑原对话"></textarea>
+      <button type="submit" class="control" id="library-send">发送</button>
+    </form>
   </dialog>
 
   <dialog id="sources-sheet" class="sources-sheet" aria-labelledby="sources-title">
