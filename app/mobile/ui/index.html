@@ -144,6 +144,28 @@
   </dialog>
 
   <div id="model-settings"></div>
+  <dialog id="chat-memory" aria-labelledby="memory-title">
+    <div class="dialog-head"><h2 id="memory-title">Chat 记忆</h2><button type="button" class="control" data-close>关闭</button></div>
+    <form id="memory-form" class="fields">
+      <p>仅用于手机 Chat，不读取或同步 Work。开启后，全文随 Chat 请求发送给你选择的模型。</p>
+      <label class="memory-toggle"><input id="memory-enabled" type="checkbox">开启文本记忆</label>
+      <label for="memory-fixed">固定记忆 · 你来管理，AI 不修改</label>
+      <textarea id="memory-fixed" rows="3" maxlength="1000" placeholder="例如：希望怎样称呼你、回答风格"></textarea>
+      <label for="memory-auto">自动记忆 · 每行一条，最多 3000 字</label>
+      <textarea id="memory-auto" rows="6" maxlength="3100" placeholder="模型只在有值得记住的信息时更新这里"></textarea>
+      <p id="memory-count"></p>
+      <details><summary>记忆来源</summary><ul id="memory-sources"></ul></details>
+      <p id="memory-feedback" role="status"></p>
+      <button type="submit" class="action">保存设置</button>
+      <button type="button" id="memory-undo" class="control">撤销最近一次自动记忆修改</button>
+      <button type="button" id="memory-clear" class="control danger">清空全部记忆</button>
+      <div id="memory-clear-confirm" hidden>
+        <p>清空固定和自动记忆，不删除聊天记录。清空后不可撤销。</p>
+        <button type="button" id="memory-confirm-clear" class="control danger">确认清空</button>
+        <button type="button" id="memory-cancel-clear" class="control">取消</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="work-settings" aria-labelledby="work-settings-title">
     <div class="dialog-head">
       <h2 id="work-settings-title">电脑连接</h2>

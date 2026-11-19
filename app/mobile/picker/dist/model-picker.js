@@ -14363,21 +14363,28 @@ function gc(e, n) {
 		}
 	}, f = (e) => e((0, b.useSyncExternalStore)(i.subscribe, i.getSnapshot));
 	function p() {
-		r.render(/* @__PURE__ */ (0, N.jsx)(er, {
+		r.render(/* @__PURE__ */ (0, N.jsxs)(er, {
 			open: a,
 			title: "设置",
 			closeLabel: "关闭",
 			onClose: m,
 			className: "yingluo-model-settings",
 			contentClassName: "yingluo-model-settings-content",
-			children: a && /* @__PURE__ */ (0, N.jsx)(tc, {
+			children: [a && n.openMemory && /* @__PURE__ */ (0, N.jsx)("button", {
+				type: "button",
+				className: "control",
+				onClick: () => {
+					m(), n.openMemory?.();
+				},
+				children: "Chat 记忆"
+			}), a && /* @__PURE__ */ (0, N.jsx)(tc, {
 				controller: d,
 				useSnapshot: f,
 				t: fc,
 				operations: u,
 				schema: uc,
 				renderSlot: pc
-			})
+			})]
 		}));
 	}
 	function m() {

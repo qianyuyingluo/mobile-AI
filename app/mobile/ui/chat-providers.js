@@ -261,7 +261,7 @@ export function sourceUrl(value) {
   } catch { return null }
 }
 
-export function streamingChatRequest(provider, model, key, history, effort, webSearch = false) {
+export function streamingChatRequest(provider, model, key, history, effort, webSearch = false, instructions = '') {
   const request = chatRequest(provider, model, key, history, effort)
   if (webSearch) {
     if (!supportsWebSearch(provider, model)) throw new Error('Web search is not supported by this model')
@@ -279,12 +279,19 @@ export function streamingChatRequest(provider, model, key, history, effort, webS
   if (provider.protocol === 'gemini') {
     request.url = request.url.replace(':generateContent', ':streamGenerateContent') + '?alt=sse'
   } else request.data.stream = true
+  if (instructions) {
+    if (provider.protocol === 'gemini') request.data.systemInstruction = { parts: [{ text: instructions }] }
+    else if (['deepseek', 'anthropic'].includes(provider.protocol)) request.data.system = instructions
+    else if (provider.protocol === 'responses') request.data.instructions = instructions
+    else request.data.messages.unshift({ role: 'system', content: instructions })
+  }
   return request
 }
 
 /** Only visible text deltas reach the transcript; reasoning stays separate. */
 export function chatStreamReader(provider, onText, onSearch = () => {}) {
   let completed = false
+  let truncated = false
   const blocks = []
   const inputJson = new Map()
   const sources = new Map()
@@ -301,6 +308,7 @@ export function chatStreamReader(provider, onText, onSearch = () => {}) {
     event({ data }) {
       if (data === '[DONE]') { completed = true; return }
       const value = JSON.parse(data)
+      if (['max_tokens', 'length', 'MAX_TOKENS'].includes(value.delta?.stop_reason || value.choices?.[0]?.finish_reason || value.candidates?.[0]?.finishReason)) truncated = true
       if (value.error || ['error', 'response.failed', 'response.incomplete'].includes(value.type)) {
         throw new Error('Model stream failed')
       }
@@ -353,5 +361,6 @@ export function chatStreamReader(provider, onText, onSearch = () => {}) {
       if (!completed) throw new Error('Model stream interrupted')
       return blocks.filter(Boolean)
     },
+    canSaveMemory() { return completed && !truncated },
   }
 }

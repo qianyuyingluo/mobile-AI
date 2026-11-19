@@ -10,6 +10,8 @@ Work 模式通过局域网连接电脑。配对后可以新建 Codex 或 DeepSee
 
 ## 电脑端
 
+`backend/Start-Work.cmd` 也默认开启桌面对话同步，与根目录 `Start-Desktop.cmd` 使用相同模式。需要单项目独立会话时再使用下方的 `--lan --project` 命令；这种模式的近期会话入口只接续上下文，不显示电脑完整历史。
+
 Windows 双击仓库根目录的 `Start-Desktop.cmd`，到自动打开的控制页配对。手机进入 Work 后点左上角头像，侧栏直接显示 Codex 项目与 Harness 工作区。选择会话即可查看电脑原会话的用户/助手文字；顶部加载更早消息，轮询和重新连接都会更新已显示的历史范围。
 
 这里读取已安装软件的数据：Codex 的 `.codex` 数据库、DeepSeek Harness 的 `.dsh/storages/workspace.json` 和 `.dsh/sessions`，不扫描本仓库的 Harness 源码。可通过 `CODEX_HOME`、`DSH_HOME` 指定实际数据目录。

@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.7**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
+**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.9**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
 
 | 模式 | 用途 | 是否需要电脑运行 |
 | --- | --- | --- |
@@ -25,7 +25,11 @@
 
 新建对话时，顶部可以选择 Chat / Work；发送第一条消息后隐藏模式选择。右上角圆形「＋」用于新建对话，输入框左侧「＋」用于添加附件。左右顶部入口的底框以 20% 不透明度显示，文字、头像和图标保持清晰；点击输入框开始编辑时，才展开附件、联网、模型和发送工具栏，发送后收起。
 
+Chat 文本记忆默认开启，在「Chat → 头像 → 设置 → Chat 记忆」管理。所有本机 Chat 共用固定记忆（手动编辑，最多 1000 字）和自动记忆（最多 3000 字、100 条），每次请求附带全文，不使用 RAG，也不接入 Work 或同步电脑 Agent 的记忆。模型仅在有必要时于回复末尾输出隐藏的 `<memory_update>` 更新段；没有更新段就不写入记忆，不额外调用一次模型。App 在流式显示前过滤控制段，只在回复正常完成、格式与编号有效且设置未改变时保存。取消、断流、长度截断或存储失败不会提交更新。已保存的更新显示「已记住」，可查看来源、编辑、撤销最近一次自动记忆修改或清空；关闭记忆后仍保留本地内容，但不注入请求或接受自动更新。删除聊天不会自动删除共享记忆，需要在记忆页另行整理。记忆保存在当前设备，开启时会随 Chat 请求发送给所选模型；跨对话延续不代表跨设备同步。
+
 ### 连接电脑处理项目
+
+推荐双击根目录 `Start-All.cmd`：准备 Harness 同步插件，启动绫音桌面同步服务、电脑控制页，以及已安装的 Codex 和 DeepSeek Harness。重复运行会复用服务和已打开的软件。双击 `Stop-All.cmd` 停止绫音服务并释放默认端口 3197，桌面软件保持打开。启动日志保存在 `%LOCALAPPDATA%\YingluoWork\launcher`。自定义端口使用 `Start-All.cmd -Port 3198`，关闭时使用同样的 `Stop-All.cmd -Port 3198`；非标准安装位置可设置 `AYANE_CODEX_EXE`、`AYANE_HARNESS_EXE`。启动器通过 CMD 调用 PowerShell，无需永久修改系统脚本执行策略。
 
 Windows 双击根目录的 [Start-Desktop.cmd](Start-Desktop.cmd)，启动器会打开电脑控制页。点击「手机配对」生成二维码。已配对手机进入 Work，点击左上角头像，在侧栏直接展开 Codex 项目或 DeepSeek Harness 工作区，再选择原有会话。历史消息按页读取，顶部可加载更早的消息；连接恢复后重新读取电脑记录。
 
@@ -187,11 +191,15 @@ node app/mobile/android/build.mjs
 ```powershell
 node --test backend/agents.test.mjs backend/server.test.mjs backend/desktop-sync.test.mjs
 node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
+node --test app/mobile/chat-memory.test.mjs
+node app/mobile/chat-memory-smoke.mjs
 node app/mobile/ui-smoke.mjs
 node app/mobile/reading-navigation-smoke.mjs
 ```
 
 界面冒烟测试需要前端依赖、已构建的组件资源和本机 Microsoft Edge。测试使用临时目录与模拟模型，覆盖手机竖屏、窄屏和横屏、输入框、流式回复、联网开关与参考资料面板；阅读导航测试额外验证触屏暂停、恢复跟随、目录拖动、问题跳转和 Chat / Work 切换。成功后打印截图目录。模拟测试通过不代表真实模型 API 或所有手机型号都已经验证。
+
+模型只返回记忆更新段时，App 在保存成功后显示「已更新记忆」；更新段位于正常回答之前时也能正确过滤并保留后续正文。无效、重复或不完整的记忆段不写入，并显示具体的记忆处理提示。
 
 ## 数据与当前范围
 

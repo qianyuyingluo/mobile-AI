@@ -4,6 +4,7 @@ import { createImageViewer } from './image-viewer.js'
 import { createReadingNavigation } from './reading-navigation.js'
 import { mountDesktopLibrary } from './desktop-library.js'
 import { desktopHistory, desktopRequestId } from './desktop-history.js'
+import { createChatMemory, memoryInstructions, memoryStream, cleanMemoryBlocks } from './chat-memory.js'
 import { supportsWebSearch, sourceUrl } from './chat-providers.js'
 
 const $ = id => document.getElementById(id)
@@ -55,6 +56,7 @@ let composerExpanded = false
 let composerEditing = false
 
 let mode = 'chat'
+const chatMemory = createChatMemory(localStorage)
 const drafts = { chat: '', work: '' }
 const attachments = { chat: [], work: [] }
 const readingFiles = { chat: false, work: false }
@@ -317,6 +319,7 @@ function loadModelPicker() {
         },
       })
       modelSettings = mountModelSettings($('model-settings'), {
+        openMemory,
         read: () => ({ catalog, profiles, keys: chatKeys, locked: mode !== 'chat' || Boolean(chat.run) }),
         writeKey(provider, key) {
           const value = key.trim()
@@ -371,6 +374,42 @@ async function openModelSettings() {
     render()
   }
 }
+
+function refreshMemoryForm() {
+  const saved = chatMemory.snapshot()
+  $('memory-enabled').checked = saved.enabled
+  $('memory-fixed').value = saved.fixed
+  $('memory-auto').value = saved.entries.map(e => e.text).join('\n')
+  $('memory-count').textContent = saved.entries.length + ' 条自动记忆 · ' + saved.entries.reduce((n, e) => n + e.text.length, 0) + ' / 3000 字'
+  $('memory-undo').disabled = !saved.previous
+  $('memory-clear-confirm').hidden = true
+  $('memory-sources').replaceChildren(...saved.entries.map(entry => {
+    const source = chat.sessions.find(s => s.id === entry.source?.sessionId)
+    return node('li', entry.text + ' — ' + (entry.source === 'manual' ? '手动编辑' : source?.title || '来源聊天已删除') +
+      ' · ' + new Date(entry.updatedAt).toLocaleString())
+  }))
+}
+
+function openMemory() {
+  if (mode !== 'chat') return
+  refreshMemoryForm()
+  $('memory-feedback').textContent = chatMemory.error()
+  if (!$('chat-memory').open) $('chat-memory').showModal()
+}
+
+function changeMemory(action, notice) {
+  try { action(); refreshMemoryForm(); $('memory-feedback').textContent = notice }
+  catch (error) { $('memory-feedback').textContent = error.name === 'QuotaExceededError' ? '存储空间不足，原记忆已保留' : error.message || '保存失败，原记忆已保留' }
+}
+$('memory-form').addEventListener('submit', event => {
+  event.preventDefault()
+  changeMemory(() => chatMemory.edit({ enabled: $('memory-enabled').checked,
+    fixed: $('memory-fixed').value, automatic: $('memory-auto').value }), '已保存')
+})
+$('memory-undo').onclick = () => changeMemory(() => chatMemory.undo(), '已撤销')
+$('memory-clear').onclick = () => { $('memory-clear-confirm').hidden = false }
+$('memory-cancel-clear').onclick = () => { $('memory-clear-confirm').hidden = true }
+$('memory-confirm-clear').onclick = () => changeMemory(() => chatMemory.clear(), '已清空记忆')
 
 function openWorkSettings({ origin = work.origin, code = '' } = {}) {
   $('host').value = origin
@@ -783,6 +822,7 @@ function messageRow(message, assistantName, richMessages) {
     row.append(list)
   }
   if (!user) renderSources(row, message)
+    if (mode === 'chat' && message.memoryNotice) row.append(button(message.memoryNotice, openMemory, 'control memory-notice'))
   return row
 }
 
@@ -892,7 +932,7 @@ function renderThread() {
   threadKey = key
   const previousTop = readingNavigation.beforeRender(resetScroll)
   const structure = JSON.stringify([mode, session?.id, messages.map(message => [message.role,
-    message.role === 'user' || !renderMarkdownMessages ? message.text : '', message.attachments, message.interrupted]), events,
+    message.role === 'user' || !renderMarkdownMessages ? message.text : '', message.attachments, message.interrupted, message.memoryNotice]), events,
     Boolean(renderMarkdownMessages), session?.historyBefore, loadingDesktopHistory, messages.length ? '' : key])
   if (structure === threadStructure && unmountMarkdown?.update) {
     const assistants = messages.filter(message => message.role !== 'user')
@@ -1254,7 +1294,8 @@ async function sendChat(text) {
   searchStatus = search ? '联网已开启，等待模型回复…' : ''
   chat.runningSessionId = session.id
   window.YingluoNative?.setReplySession?.(session.id)
-  session.messages.push({ role: 'user', text, ...(files.length && { attachments: files }) })
+  const userMessageId = desktopRequestId()
+  session.messages.push({ id: userMessageId, role: 'user', text, ...(files.length && { attachments: files }) })
   if (session.messages.length === 1) session.title = (text || files[0].name).slice(0, 34)
   attachments.chat = []
   composerEditing = false
@@ -1264,15 +1305,17 @@ async function sendChat(text) {
   render()
   let answer
   let frame = 0
+  const memory = chatMemory.snapshot()
   try {
     const effort = selection.reasoningEffort
-    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], session.messages, effort, search)
+    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], session.messages, effort, search, memoryInstructions(memory))
     answer = { role: 'assistant', text: '', streaming: true }
     session.messages.push(answer)
-    const stream = chatStreamReader(provider, delta => {
+    const memoryFilter = memoryStream(delta => {
       answer.text += delta
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
-    }, update => {
+    })
+    const stream = chatStreamReader(provider, delta => memoryFilter.push(delta), update => {
       if (update.sources) answer.sources = update.sources
       if (update.failed) answer.searchFailed = true
       if (update.status) searchStatus = update.status
@@ -1287,8 +1330,26 @@ async function sendChat(text) {
       onEvent: stream.event,
     })
     const nativeContent = stream.finish()
-    if (search && nativeContent.length) answer.nativeReply = { endpoint: provider.endpoint, model: model.id, content: nativeContent }
-    if (!answer.text.trim()) throw new Error('Missing completion text')
+    const memoryResult = memoryFilter.finish()
+    if (search && nativeContent.length) answer.nativeReply = { endpoint: provider.endpoint, model: model.id, content: cleanMemoryBlocks(nativeContent) }
+    let memoryAck = ''
+    if (memory.enabled && memoryResult.present && !controller.signal.aborted) {
+      if (memoryResult.error || !stream.canSaveMemory()) answer.memoryNotice = memoryResult.error || '回复未完整结束，本次记忆未保存'
+      else {
+        try {
+          const result = chatMemory.apply(memoryResult.patch, memory.revision, { sessionId: session.id, messageId: userMessageId })
+          if (result.changed) { answer.memoryNotice = '已记住 · 查看 / 撤销'; memoryAck = '已更新记忆。' }
+          else if (result.reason) answer.memoryNotice = result.reason
+          else memoryAck = '本次没有新增或修改记忆。'
+        } catch (error) { answer.memoryNotice = error.name === 'QuotaExceededError' ? '存储空间不足，记忆未保存' : '记忆未保存：' + error.message }
+      }
+    }
+    if (!answer.text.trim()) {
+      if (!memoryResult.present) throw new Error('Missing completion text')
+      // Memory-only replies are a valid outcome for an explicit "remember this" request.
+      answer.text = memoryAck || answer.memoryNotice || 'Chat 记忆已关闭，本次未保存记忆。'
+      delete answer.nativeReply
+    }
   } catch (error) {
     chat.error = chatError(error)
     if (!answer?.text) {

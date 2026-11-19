@@ -24,6 +24,7 @@ type Profile = Record<string, unknown>
 type Profiles = Record<string, Profile>
 type Props = ComponentProps<typeof ModelsSection>
 type Settings = {
+  openMemory?: () => void
   read: () => { catalog: Provider[]; profiles: Profiles; keys: Record<string, string>; locked: boolean }
   writeProfiles: (profiles: Profiles) => boolean
   writeKey: (provider: string, value: string) => boolean
@@ -188,6 +189,7 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   function render() {
     root.render(<Modal open={open} title="设置" closeLabel="关闭" onClose={close}
       className="yingluo-model-settings" contentClassName="yingluo-model-settings-content">
+      {open && settings.openMemory && <button type="button" className="control" onClick={() => { close(); settings.openMemory?.() }}>Chat 记忆</button>}
       {open && <ModelsSection controller={controller} useSnapshot={useSnapshot} t={t}
         operations={operations} schema={schema} renderSlot={neverRender} />}
     </Modal>)

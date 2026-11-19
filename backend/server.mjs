@@ -36,6 +36,7 @@ const previewFiles = new Map([
   ['/image-viewer.js', ['app/mobile/ui/image-viewer.js', 'text/javascript']],
   ['/reading-navigation.js', ['app/mobile/ui/reading-navigation.js', 'text/javascript']],
   ['/chat-providers.js', ['app/mobile/ui/chat-providers.js', 'text/javascript']],
+  ['/chat-memory.js', ['app/mobile/ui/chat-memory.js', 'text/javascript']],
   ['/assets/picker/model-picker.js', ['app/mobile/picker/dist/model-picker.js', 'text/javascript']],
   ['/assets/picker/model-picker.css', ['app/mobile/picker/dist/model-picker.css', 'text/css']],
   ['/assets/design-platform.css', ['app/packages/client/ui-theme/src/styles/design-platform.css', 'text/css']],
