@@ -17,11 +17,12 @@ import { sendHarnessDesktopMessage } from './harness-desktop.mjs'
 import { installHarnessSync } from './install-harness-sync.mjs'
 import { openDesktopControl, runningDesktop } from './desktop.mjs'
 import { attachmentPrompt, attachmentText, decodeAttachments, imagePaths, saveAttachments } from './work-attachments.mjs'
+import { brand } from '../app/mobile/ui/brand.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const requireQr = createRequire(join(root, 'app', 'packages', 'client', 'ui-settings-general', 'package.json'))
-const titles = { codex: 'Codex', deepseek: 'DeepSeek Harness', neko: '绫音' }
-const name = '绫音'
+const titles = { codex: 'Codex', deepseek: 'DeepSeek Harness', neko: brand.assistant }
+const name = brand.name
 const version = '1.0.0'
 const maxBodyLength = 65536
 const previewFiles = new Map([
@@ -42,6 +43,7 @@ const previewFiles = new Map([
   ['/assets/picker/model-picker.js', ['app/mobile/picker/dist/model-picker.js', 'text/javascript']],
   ['/assets/picker/model-picker.css', ['app/mobile/picker/dist/model-picker.css', 'text/css']],
   ['/assets/design-platform.css', ['app/packages/client/ui-theme/src/styles/design-platform.css', 'text/css']],
+  ['/assets/mobile-ai.svg', ['app/mobile/ui/assets/mobile-ai.svg', 'image/svg+xml']],
   ['/assets/avatar.webp', ['app/packages/client/ui-brand-official/src/client/assets/neko-avatar.webp', 'image/webp']],
   ['/assets/animations/still.png', ['yingluo-animation-v2/frames-hd/idle/01.png', 'image/png']],
   ...['idle', 'waiting', 'running', 'failed'].map(key =>
@@ -553,7 +555,7 @@ function pairLink(origin, code) {
 async function printPairQr(origin, code) {
   try {
     console.log(await requireQr('qrcode').toString(pairLink(origin, code), { type: 'terminal', small: true }))
-    console.log('手机扫码后打开绫音，确认配对。')
+    console.log('使用 mobile-AI 内的扫码入口确认配对。')
   } catch {
     console.log('二维码组件不可用，可在手机 Work 模式输入上面的地址和配对码。')
   }

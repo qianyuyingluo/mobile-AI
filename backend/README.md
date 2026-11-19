@@ -1,4 +1,4 @@
-# 绫音 Work
+# mobile-AI Work
 
 ## 手机端
 
@@ -36,9 +36,9 @@ node backend/server.mjs --lan --project "你的项目目录"
 
 Codex 使用电脑端已有登录和模型配置。DeepSeek Harness 使用自己的 API 配置，也可通过 `DEEPSEEK_API_KEY` 提供密钥。工作区同步使用安装版 Harness 的用户数据目录，默认是用户目录下的 `.dsh`。仅当桌面软件也在使用自定义目录时，才设置相同的 `DSH_HOME`。
 
-## 让绫音自动派单
+## 让 AI 自动派单
 
-在电脑端设置 `YINGLUO_AI_BASE_URL`、`YINGLUO_AI_MODEL` 和对应的 `YINGLUO_AI_API_KEY`，再启动服务。Work 的新建会话中会出现「绫音」。模型支持工具调用时，绫音可以把你交给她的项目任务转交给一个 agent，并给出继续原会话的入口。
+在电脑端设置 `YINGLUO_AI_BASE_URL`、`YINGLUO_AI_MODEL` 和对应的 `YINGLUO_AI_API_KEY`，再启动服务。Work 的新建会话中会出现「AI」。模型支持工具调用时，AI 可以把你交给它的项目任务转交给一个 agent，并给出继续原会话的入口。
 
 ## 浏览器与重新打包
 

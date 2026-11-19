@@ -5,3 +5,5 @@
 **/.env.local
 **/*.keystore
 **/*.jks
+# Ayane APK is published on codex/ayane; retain local builds without mixing downloads on main.
+/app/mobile/Yingluo.apk

@@ -11,7 +11,6 @@ import { stageVariant, variants } from './variants.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '..', '..')
-const assetRoot = join(appRoot, '..', 'yingluo-animation-v2')
 const windows = process.platform === 'win32'
 const exe = windows ? '.exe' : ''
 const collator = new Intl.Collator('en', { numeric: true })
@@ -19,10 +18,10 @@ const minSdk = '26'
 const targetSdk = '34'
 
 const { values: args } = parseArgs({
-  options: { ui: { type: 'string' }, output: { type: 'string' }, variant: { type: 'string', default: 'ayane' } },
+  options: { ui: { type: 'string' }, output: { type: 'string' }, variant: { type: 'string', default: 'mobile-ai' } },
 })
 const variant = variants[args.variant]
-if (!variant) throw new Error('Unknown variant. Choose ayane or mobile-ai.')
+if (!variant) throw new Error('Unknown variant. Choose mobile-ai; the Ayane build is maintained on codex/ayane.')
 const ui = args.ui === undefined ? resolve(here, '../ui') : resolve(args.ui)
 const output = args.output === undefined ? resolve(here, '..', variant.apk) : resolve(args.output)
 if (!variant.companion && output.toLowerCase() === resolve(here, '../Yingluo.apk').toLowerCase()) {
@@ -121,7 +120,7 @@ async function build(work) {
 
   copy(ui, assets)
   if (args.ui === undefined) {
-    const pickerDist = variant.companion ? join(appRoot, 'mobile', 'picker', 'dist') : join(work, 'picker')
+    const pickerDist = join(work, 'picker')
     await buildMobilePicker(pickerDist)
     for (const file of ['model-picker.js', 'model-picker.css']) {
       copy(join(pickerDist, file), join(assets, 'assets', 'picker', file))
@@ -131,30 +130,6 @@ async function build(work) {
   copy(join(styleRoot, 'design-platform.css'), join(assets, 'assets', 'design-platform.css'))
   copy(join(here, 'res'), resources)
   copy(join(here, 'AndroidManifest.xml'), manifest)
-  if (variant.companion) {
-    copy(join(appRoot, 'packages', 'client', 'ui-brand-official', 'src', 'client', 'assets', 'neko-avatar.webp'),
-      join(assets, 'assets', 'avatar.webp'))
-    for (const state of ['idle', 'waiting', 'running', 'failed', 'waving']) {
-      copy(join(assetRoot, 'animations', state + '.png'), join(assets, 'assets', 'animations', state + '.png'))
-    }
-    const idleFrames = join(assetRoot, 'frames-hd', 'idle')
-    const firstFrame = readdirSync(idleFrames).filter(name => name.endsWith('.png')).sort(collator.compare)[0]
-    if (!firstFrame) throw new Error('No idle frame found for reduced motion')
-    copy(join(idleFrames, firstFrame), join(assets, 'assets', 'animations', 'still.png'))
-    // ColorOS displays local resource frames in its native Live Update capsule.
-    for (const state of ['running', 'waving']) {
-      const frames = readdirSync(join(assetRoot, 'frames-hd', state)).filter(name => name.endsWith('.png')).sort(collator.compare)
-      if (frames.length !== 8) throw new Error('Reply animation must contain eight frames: ' + state)
-      frames.forEach((file, index) => {
-        const name = `reply_${state}_${String(index + 1).padStart(2, '0')}`
-        copy(join(assetRoot, 'frames-hd', state, file), join(resources, 'drawable-nodpi', name + '.png'))
-      })
-      mkdirSync(join(resources, 'drawable'), { recursive: true })
-      writeFileSync(join(resources, 'drawable', `reply_${state}.xml`),
-        `<animation-list xmlns:android="http://schemas.android.com/apk/res/android" android:oneshot="false">${frames.map((_, i) => `<item android:duration="125" android:drawable="@drawable/reply_${state}_${String(i + 1).padStart(2, '0')}" />`).join('')}</animation-list>`)
-    }
-    copy(join(appRoot, 'apps', 'web', 'public', 'icon-192.png'), join(resources, 'drawable-nodpi', 'yingluo.png'))
-  }
   stageVariant(variant, { assets, resources, manifest })
 
   mkdirSync(classes)

@@ -811,3 +811,7 @@ dialog::backdrop { background: var(--dsw-alias-bg-mask-1); }
   .sidebar { transition: opacity 100ms ease, display 100ms allow-discrete, overlay 100ms allow-discrete; transform: none; }
   @starting-style { .sidebar[open] { transform: none; } }
 }
+
+.topbar .brand-icon-only { width: 44px; height: 44px; padding: 0; justify-content: center; }
+.brand-gear { flex: none; color: inherit; opacity: 1; }
+.sidebar .brand-gear { margin-inline: 5px; }

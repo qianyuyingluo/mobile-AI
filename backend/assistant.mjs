@@ -18,7 +18,7 @@ export function createWorkAssistant(env) {
     const messages = [
       {
         role: 'system',
-        content: '你是绫音，用户电脑上的项目助手。当前项目是 ' + project
+        content: '你是用户电脑上的 AI 项目助手。当前项目是 ' + project
           + '。用用户的语言回复。用户要求处理项目时，可选一个合适的 agent 完成明确授权的任务。'
           + '普通问答直接回答。用实际返回的结果汇报进度与失败，不要声称执行了没有完成的操作。',
       },
@@ -50,18 +50,18 @@ export function createWorkAssistant(env) {
       signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]),
       redirect: 'error',
     })
-    if (!response.ok) throw new Error('猫娘模型请求失败（HTTP ' + response.status + '）。')
+    if (!response.ok) throw new Error('项目助手模型请求失败（HTTP ' + response.status + '）。')
     const answer = (await response.json()).choices?.[0]?.message
     const call = tools && answer?.tool_calls?.find(item => item.function?.name === 'delegate')
     if (call) {
       const task = JSON.parse(call.function.arguments)
       if (!available.includes(task.agent) || typeof task.prompt !== 'string' || !task.prompt.trim()) {
-        throw new Error('猫娘返回了无效的任务。')
+        throw new Error('项目助手返回了无效的任务。')
       }
       return { task: { agent: task.agent, prompt: task.prompt.trim().slice(0, 20000) } }
     }
     const text = typeof answer?.content === 'string' ? answer.content.trim() : ''
-    if (!text) throw new Error('猫娘模型没有返回文字。')
+    if (!text) throw new Error('项目助手模型没有返回文字。')
     return { text }
   }
 }

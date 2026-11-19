@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 
 const root = resolve(import.meta.dirname, '../..')
 const adb = join(process.env.LOCALAPPDATA, 'Android/Sdk/platform-tools/adb.exe')
-const apk = join(root, 'mobile/Yingluo.apk')
+const apk = join(root, 'mobile/mobile-AI.apk')
 const temp = mkdtempSync(join(tmpdir(), 'yingluo-reply-device-'))
 const ui = join(temp, 'ui')
 mkdirSync(ui)
@@ -34,7 +34,8 @@ const server = createServer((req, res) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const port = server.address().port
-writeFileSync(join(ui, 'index.html'), '<!doctype html><html><meta name="viewport" content="width=device-width"><h1>绫音 · 本地实况测试</h1><p>测试结束后恢复正常应用。</p><script src="test-' + port + '.js"></script></html>')
+writeFileSync(join(ui, 'app.css'), '')
+writeFileSync(join(ui, 'index.html'), '<!doctype html><html><meta name="viewport" content="width=device-width"><h1>mobile-AI · 本地实况测试</h1><p>测试结束后恢复正常应用。</p><script src="test-' + port + '.js"></script></html>')
 writeFileSync(join(ui, 'test-' + port + '.js'), `window.yingluoHttpChunk=()=>{}; window.yingluoHttpResult=(id,status)=>{document.body.dataset.status=status;console.log('ReplyDeviceResult:'+status)};
 setTimeout(()=>{YingluoNative.setReplySession('device-smoke');YingluoNative.request('smoke','http://127.0.0.1:${port}/stream','POST','{"Accept":"text/event-stream"}','{}')},1000);`)
 try {
@@ -43,16 +44,16 @@ try {
   device('reverse', `tcp:${port}`, `tcp:${port}`)
   device('install', '-r', join(temp, 'fixture.apk'))
   await sleep(1500)
-  device('shell', 'am', 'force-stop', 'app.yingluo.mobile')
-  device('shell', 'am', 'start', '-n', 'app.yingluo.mobile/.MainActivity')
+  device('shell', 'am', 'force-stop', 'app.mobileai.mobile')
+  device('shell', 'am', 'start', '-n', 'app.mobileai.mobile/app.yingluo.mobile.MainActivity')
   await sleep(4000)
   capture('permission')
-  const permissions = device('shell', 'dumpsys', 'package', 'app.yingluo.mobile')
+  const permissions = device('shell', 'dumpsys', 'package', 'app.mobileai.mobile')
   if (!/android.permission.POST_NOTIFICATIONS: granted=true/.test(permissions)) {
     console.log('Waiting for notification permission on phone (60 seconds).')
     await sleep(60000)
-    device('shell', 'am', 'force-stop', 'app.yingluo.mobile')
-    device('shell', 'am', 'start', '-n', 'app.yingluo.mobile/.MainActivity')
+    device('shell', 'am', 'force-stop', 'app.mobileai.mobile')
+    device('shell', 'am', 'start', '-n', 'app.mobileai.mobile/app.yingluo.mobile.MainActivity')
     await sleep(4000)
   }
   device('shell', 'input', 'keyevent', 'KEYCODE_HOME')
@@ -62,7 +63,7 @@ try {
   capture('thinking-next-frame')
   const inspect = name => {
     const dump = device('shell', 'dumpsys', 'notification', '--noredact')
-    const records = dump.split(/(?=NotificationRecord\()/).filter(block => block.startsWith('NotificationRecord(') && block.split('\n')[0].includes('pkg=app.yingluo.mobile'))
+    const records = dump.split(/(?=NotificationRecord\()/).filter(block => block.startsWith('NotificationRecord(') && block.split('\n')[0].includes('pkg=app.mobileai.mobile'))
     const relevant = records.map(block => block.split(/\n\s*(?:NotificationRecord\(|Zen Mode|Ranking Config|Notification listeners)/)[0]).join('\n')
     writeFileSync(join(temp, name + '.txt'), relevant)
     console.log(name + ': ' + relevant.split('\n').filter(line => /NotificationRecord\(|android.title=|android.text=|requestPromoted|mFgs|flags=/.test(line)).join('\n').slice(0, 1800))
@@ -88,7 +89,7 @@ try {
   console.log('PASS: OPPO native background progress, completion and expiry; animation playback requires visual review. Screenshots: ' + temp)
 } finally {
   try {
-    device('shell', 'am', 'force-stop', 'app.yingluo.mobile')
+    device('shell', 'am', 'force-stop', 'app.mobileai.mobile')
     device('install', '-r', apk)
     device('reverse', '--remove', `tcp:${port}`)
   } finally {

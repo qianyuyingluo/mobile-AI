@@ -6,7 +6,7 @@ import { fileType } from './desktop-files.mjs'
 export async function sendHarnessDesktopMessage(sessionId, text, requestId, { attachments = [] } = {}) {
   const path = join(process.env.LOCALAPPDATA || homedir(), 'YingluoWork', 'harness-desktop.json')
   const target = JSON.parse(await readFile(path, 'utf8').catch(() => {
-    throw new Error('请先在 Harness 桌面启用绫音同步插件。')
+    throw new Error('请先在 Harness 桌面启用桌面同步插件。')
   }))
   if (!Number.isInteger(target.port) || target.port < 1 || target.port > 65535 ||
     !/^[a-f0-9]{64}$/u.test(target.token)) throw new Error('Harness 同步连接配置无效。')

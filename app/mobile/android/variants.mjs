@@ -3,8 +3,6 @@ import { join } from 'node:path'
 import { ICON_SYMBOLS } from '../../packages/client/ui-primitives/src/icons/artwork.ts'
 
 export const variants = Object.freeze({
-  ayane: { name: '绫音', assistant: '绫音', companion: true, pairScheme: 'yingluo',
-    package: 'app.yingluo.mobile', apk: 'Yingluo.apk', versionCode: '27', versionName: '0.8.11' },
   'mobile-ai': { name: 'mobile-AI', assistant: 'AI', companion: false, pairScheme: 'mobile-ai',
     package: 'app.mobileai.mobile', apk: 'mobile-AI.apk', versionCode: '1', versionName: '1.0.0' },
 })
@@ -28,7 +26,8 @@ export function stageVariant(variant, { assets, resources, manifest }) {
   if (html.includes('avatar.webp') || html.includes('assets/animations/')) throw new Error('Companion artwork remains in mobile-AI HTML')
   writeFileSync(join(assets, 'index.html'), html)
   writeFileSync(join(assets, 'assets', 'mobile-ai.svg'), gear.replaceAll('currentColor', '#111214'))
-  writeFileSync(join(assets, 'app.css'), readFileSync(join(assets, 'app.css'), 'utf8') + `
+  const css = readFileSync(join(assets, 'app.css'), 'utf8')
+  if (!css.includes('.topbar .brand-icon-only')) writeFileSync(join(assets, 'app.css'), css + `
 .topbar .brand-icon-only { width: 44px; height: 44px; padding: 0; justify-content: center; }
 .brand-gear { flex: none; color: inherit; opacity: 1; }
 .sidebar .brand-gear { margin-inline: 5px; }
