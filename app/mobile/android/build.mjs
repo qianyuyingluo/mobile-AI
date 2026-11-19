@@ -7,6 +7,7 @@ import { basename, delimiter, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { buildMobilePicker } from '../picker/build.mjs'
+import { stageVariant, variants } from './variants.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '..', '..')
@@ -18,10 +19,15 @@ const minSdk = '26'
 const targetSdk = '34'
 
 const { values: args } = parseArgs({
-  options: { ui: { type: 'string' }, output: { type: 'string' } },
+  options: { ui: { type: 'string' }, output: { type: 'string' }, variant: { type: 'string', default: 'ayane' } },
 })
+const variant = variants[args.variant]
+if (!variant) throw new Error('Unknown variant. Choose ayane or mobile-ai.')
 const ui = args.ui === undefined ? resolve(here, '../ui') : resolve(args.ui)
-const output = args.output === undefined ? resolve(here, '../Yingluo.apk') : resolve(args.output)
+const output = args.output === undefined ? resolve(here, '..', variant.apk) : resolve(args.output)
+if (!variant.companion && output.toLowerCase() === resolve(here, '../Yingluo.apk').toLowerCase()) {
+  throw new Error('mobile-AI must use its own APK output path')
+}
 const sdk = resolveSdk()
 const platform = latestDirectory(join(sdk, 'platforms'), /^android-\d+$/, name => Number(name.slice(8)) >= 36)
 const tools = latestDirectory(join(sdk, 'build-tools'), /^\d+\.\d+\.\d+$/)
@@ -111,10 +117,11 @@ async function build(work) {
   const unaligned = join(work, 'unaligned.apk')
   const aligned = join(work, 'aligned.apk')
   const signed = join(work, 'signed.apk')
+  const manifest = join(work, 'AndroidManifest.xml')
 
   copy(ui, assets)
   if (args.ui === undefined) {
-    const pickerDist = join(appRoot, 'mobile', 'picker', 'dist')
+    const pickerDist = variant.companion ? join(appRoot, 'mobile', 'picker', 'dist') : join(work, 'picker')
     await buildMobilePicker(pickerDist)
     for (const file of ['model-picker.js', 'model-picker.css']) {
       copy(join(pickerDist, file), join(assets, 'assets', 'picker', file))
@@ -122,29 +129,33 @@ async function build(work) {
   }
   const styleRoot = join(appRoot, 'packages', 'client', 'ui-theme', 'src', 'styles')
   copy(join(styleRoot, 'design-platform.css'), join(assets, 'assets', 'design-platform.css'))
-  copy(join(appRoot, 'packages', 'client', 'ui-brand-official', 'src', 'client', 'assets', 'neko-avatar.webp'),
-    join(assets, 'assets', 'avatar.webp'))
-  for (const state of ['idle', 'waiting', 'running', 'failed', 'waving']) {
-    copy(join(assetRoot, 'animations', state + '.png'), join(assets, 'assets', 'animations', state + '.png'))
-  }
-  const idleFrames = join(assetRoot, 'frames-hd', 'idle')
-  const firstFrame = readdirSync(idleFrames).filter(name => name.endsWith('.png')).sort(collator.compare)[0]
-  if (!firstFrame) throw new Error('No idle frame found for reduced motion')
-  copy(join(idleFrames, firstFrame), join(assets, 'assets', 'animations', 'still.png'))
   copy(join(here, 'res'), resources)
-  // ColorOS displays local resource frames in its native Live Update capsule.
-  for (const state of ['running', 'waving']) {
-    const frames = readdirSync(join(assetRoot, 'frames-hd', state)).filter(name => name.endsWith('.png')).sort(collator.compare)
-    if (frames.length !== 8) throw new Error('Reply animation must contain eight frames: ' + state)
-    frames.forEach((file, index) => {
-      const name = `reply_${state}_${String(index + 1).padStart(2, '0')}`
-      copy(join(assetRoot, 'frames-hd', state, file), join(resources, 'drawable-nodpi', name + '.png'))
-    })
-    mkdirSync(join(resources, 'drawable'), { recursive: true })
-    writeFileSync(join(resources, 'drawable', `reply_${state}.xml`),
-      `<animation-list xmlns:android="http://schemas.android.com/apk/res/android" android:oneshot="false">${frames.map((_, i) => `<item android:duration="125" android:drawable="@drawable/reply_${state}_${String(i + 1).padStart(2, '0')}" />`).join('')}</animation-list>`)
+  copy(join(here, 'AndroidManifest.xml'), manifest)
+  if (variant.companion) {
+    copy(join(appRoot, 'packages', 'client', 'ui-brand-official', 'src', 'client', 'assets', 'neko-avatar.webp'),
+      join(assets, 'assets', 'avatar.webp'))
+    for (const state of ['idle', 'waiting', 'running', 'failed', 'waving']) {
+      copy(join(assetRoot, 'animations', state + '.png'), join(assets, 'assets', 'animations', state + '.png'))
+    }
+    const idleFrames = join(assetRoot, 'frames-hd', 'idle')
+    const firstFrame = readdirSync(idleFrames).filter(name => name.endsWith('.png')).sort(collator.compare)[0]
+    if (!firstFrame) throw new Error('No idle frame found for reduced motion')
+    copy(join(idleFrames, firstFrame), join(assets, 'assets', 'animations', 'still.png'))
+    // ColorOS displays local resource frames in its native Live Update capsule.
+    for (const state of ['running', 'waving']) {
+      const frames = readdirSync(join(assetRoot, 'frames-hd', state)).filter(name => name.endsWith('.png')).sort(collator.compare)
+      if (frames.length !== 8) throw new Error('Reply animation must contain eight frames: ' + state)
+      frames.forEach((file, index) => {
+        const name = `reply_${state}_${String(index + 1).padStart(2, '0')}`
+        copy(join(assetRoot, 'frames-hd', state, file), join(resources, 'drawable-nodpi', name + '.png'))
+      })
+      mkdirSync(join(resources, 'drawable'), { recursive: true })
+      writeFileSync(join(resources, 'drawable', `reply_${state}.xml`),
+        `<animation-list xmlns:android="http://schemas.android.com/apk/res/android" android:oneshot="false">${frames.map((_, i) => `<item android:duration="125" android:drawable="@drawable/reply_${state}_${String(i + 1).padStart(2, '0')}" />`).join('')}</animation-list>`)
+    }
+    copy(join(appRoot, 'apps', 'web', 'public', 'icon-192.png'), join(resources, 'drawable-nodpi', 'yingluo.png'))
   }
-  copy(join(appRoot, 'apps', 'web', 'public', 'icon-192.png'), join(resources, 'drawable-nodpi', 'yingluo.png'))
+  stageVariant(variant, { assets, resources, manifest })
 
   mkdirSync(classes)
   mkdirSync(dex)
@@ -155,8 +166,8 @@ async function build(work) {
     ...classFiles(classes)])
   run(join(tools, 'aapt2' + exe), ['compile', '--dir', resources, '-o', compiled])
   run(join(tools, 'aapt2' + exe), ['link', '-I', android, '--manifest',
-    join(here, 'AndroidManifest.xml'), '--min-sdk-version', minSdk, '--target-sdk-version', targetSdk,
-    '--version-code', '25', '--version-name', '0.8.9', '-o', unaligned, compiled])
+    manifest, '--min-sdk-version', minSdk, '--target-sdk-version', targetSdk,
+    '--version-code', variant.versionCode, '--version-name', variant.versionName, '-o', unaligned, compiled])
   // The Windows aapt2 -A path gives nested assets backslashes in ZIP entry names.
   run(join(javaBin, 'jar' + exe), ['--update', '--file', unaligned, '--no-manifest',
     '-C', work, 'assets', '-C', dex, 'classes.dex'])

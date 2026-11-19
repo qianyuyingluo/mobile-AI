@@ -1,3 +1,5 @@
+import { brand } from './brand.js'
+
 export const memoryKey = 'yingluo.chat.memory.v1'
 const openTag = '<memory_update>', closeTag = '</memory_update>'
 const empty = () => ({ enabled: true, fixed: '', entries: [], revision: 0, previous: null })
@@ -69,7 +71,7 @@ export function createChatMemory(storage) {
 /** Full text injection, with no retrieval and no Work integration. */
 export function memoryInstructions(state) {
   if (!state.enabled) return ''
-  return `你是绫音。以下为手机 Chat 的文本记忆功能，不涉及电脑或 Work。
+  return `你是${brand.companion ? brand.name : 'AI 助手'}。以下为手机 Chat 的文本记忆功能，不涉及电脑或 Work。
 先自然回答用户。仅当本轮确有值得长期保留的新事实、稳定偏好或用户明确纠正时，在回复最末尾额外输出一个 <memory_update>JSON</memory_update>。
 不需要记忆时，绝不输出记忆标记、空 JSON 或无更新说明。此标记为应用控制段，不能在正文或代码块中展示示例。
 当前下方列出的记忆是实际已保存的完整内容。历史回复中说过“记住了”不代表现在仍已保存，用户可能撤销或删除了记忆。

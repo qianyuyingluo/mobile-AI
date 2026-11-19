@@ -4,6 +4,8 @@ import { createImageViewer } from './image-viewer.js'
 import { createReadingNavigation } from './reading-navigation.js'
 import { mountDesktopLibrary } from './desktop-library.js'
 import { desktopHistory, desktopRequestId } from './desktop-history.js'
+import { animateDialog } from './panel-motion.js'
+import { brand } from './brand.js'
 import { createChatMemory, memoryInstructions, memoryStream, cleanMemoryBlocks } from './chat-memory.js'
 import { supportsWebSearch, sourceUrl } from './chat-providers.js'
 
@@ -23,10 +25,12 @@ let desktopAddresses = []
 let scanController
 const picker = $('agent-picker')
 const sidebar = $('sidebar')
+animateDialog(sidebar, { drawer: true })
+for (const id of ['work-settings', 'computer-pairing', 'chat-memory']) animateDialog($(id))
 const viewImages = createImageViewer($('image-viewer'))
 const deleteDialog = $('delete-session')
 const relativeDate = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
-const agentNames = { codex: 'Codex', deepseek: 'DeepSeek Harness', neko: '绫音' }
+const agentNames = { codex: 'Codex', deepseek: 'DeepSeek Harness', neko: brand.assistant }
 const runLabels = { idle: '就绪', running: '执行中', failed: '执行失败', cancelled: '已停止' }
 const settingsKey = 'yingluo.chat.settings.v2'
 const previousSettingsKey = 'yingluo.chat.settings.v1'
@@ -260,7 +264,10 @@ function setComposerExpanded(expanded, focus = false) {
   const start = prompt.selectionStart, end = prompt.selectionEnd, scroll = prompt.scrollTop
   composerExpanded = expanded
   document.querySelector('.app').toggleAttribute('data-composer-expanded', expanded)
-  $('expand-prompt').textContent = expanded ? '收起' : '展开'
+  const label = expanded ? '收起输入框' : '展开输入框'
+  $('expand-prompt').setAttribute('aria-label', label)
+  $('expand-prompt').title = label
+  $('expand-prompt').querySelector('use').setAttribute('href', expanded ? '#dsw-icon-chevron-down-outline-regular' : '#dsw-icon-fullscreen-outline-regular')
   $('expand-prompt').setAttribute('aria-expanded', String(expanded))
   prompt.style.height = ''
   resizePrompt()
@@ -455,13 +462,13 @@ async function openScanner() {
             const link = new URL(result.data)
             const code = link.searchParams.get('code')
             const origin = workOrigin(link.searchParams.get('url'))
-            if (link.protocol === 'yingluo:' && link.hostname === 'pair' && /^[a-f\d]{10}$/i.test(code)) {
+            if (['yingluo:', brand.pairScheme + ':'].includes(link.protocol) && link.hostname === 'pair' && /^[a-f\d]{10}$/i.test(code)) {
               scanDialog.close()
               window.yingluoPairLink(origin, code)
               return
             }
           } catch { /* Keep scanning after a non-pairing code. */ }
-          status.textContent = '请扫描绫音电脑控制页上的配对二维码。'
+          status.textContent = '请扫描电脑控制页上的配对二维码。'
         }
       }
       await new Promise(resolve => setTimeout(resolve, 135))
@@ -507,7 +514,7 @@ function openDesktopPairing() {
 }
 
 async function initializeDesktop() {
-  document.title = '绫音 · 电脑控制'
+  document.title = brand.name + ' · 电脑控制'
   $('open-settings').textContent = '手机配对'
   $('desktop-pair').hidden = false
   $('desktop-pair').addEventListener('click', openDesktopPairing)
@@ -679,7 +686,7 @@ function renderDesktopSidebar(groups) {
 
 function confirmSessionDeletion(session) {
   pendingDeletion = { id: session.id, mode }
-  $('delete-session-description').textContent = '确定删除绫音中的「' + redact(session.title) + '」会话记录？'
+  $('delete-session-description').textContent = '确定删除' + brand.name + '中的「' + redact(session.title) + '」会话记录？'
   deleteDialog.showModal()
 }
 
@@ -732,11 +739,11 @@ function emptyState(title, body, action, handler) {
 function renderEmpty(session) {
   if (mode === 'chat') {
     return chatReady()
-      ? emptyState('和绫音聊聊', '你想聊点什么？')
-      : emptyState('和绫音聊聊', '选择模型并填写 API Key，就可以开始聊天。', '设置模型', openModelSettings)
+      ? emptyState(brand.companion ? '和' + brand.name + '聊聊' : '开始对话', '你想聊点什么？')
+      : emptyState(brand.companion ? '和' + brand.name + '聊聊' : '开始对话', '选择模型并填写 API Key，就可以开始聊天。', '设置模型', openModelSettings)
   }
   if (!linked()) {
-    return emptyState('连接电脑', '打开电脑端绫音服务，填写地址和配对码。', '开始配对', openWorkSettings)
+    return emptyState('连接电脑', '打开电脑端服务，填写地址和配对码。', '开始配对', openWorkSettings)
   }
   if (session) return emptyState(agentNames[session.agent] ?? 'Work 会话', '发条消息，开始处理当前项目。')
   if (!work.summary) {
@@ -805,7 +812,7 @@ function messageRow(message, assistantName, richMessages) {
   const user = message.role === 'user'
   const row = node('article', '', user ? 'message message-user' : 'message message-assistant')
   row.toggleAttribute('data-streaming', Boolean(message.streaming))
-  row.append(node('p', user ? '你' : assistantName, 'message-name'))
+  row.append(node('p', user ? '你' : assistantName, user ? 'sr-only' : 'message-name'))
   if (message.interrupted) row.append(node('p', '回复已中断，已保留收到的内容', 'message-name'))
   if (message.text || !user) {
     const text = redact(message.text)
@@ -949,7 +956,7 @@ function renderThread() {
   }
   threadStructure = structure
   const eventOpen = thread.querySelector('details')?.open ?? false
-  const assistantName = inChat ? '绫音' : agentNames[session?.agent] ?? '助手'
+  const assistantName = inChat ? brand.assistant : agentNames[session?.agent] ?? '助手'
   const richMessages = []
   const rows = messages.map(message => messageRow(message, assistantName, richMessages))
   if (!inChat && work.desktop && session?.historyBefore > 0) {
@@ -1002,18 +1009,22 @@ function render() {
   $('model-picker').hidden = !inChat
   updateModelPicker()
   renderComposerOptions(inChat, busy || running || (!inChat && !ready))
-  const placeholder = inChat ? '发消息给绫音…' : '给当前助手发任务…'
+  const placeholder = inChat ? (brand.companion ? '发消息给' + brand.name + '…' : '输入消息…') : '给当前助手发任务…'
   prompt.placeholder = placeholder
   prompt.setAttribute('aria-label', inChat ? '聊天消息' : 'Work 消息')
   $('send').disabled = busy || running || !ready || readingFiles[mode]
   $('stop').hidden = !running
   $('stop').disabled = !inChat && busy
-  const status = error || (inChat && running ? searchStatus || '绫音正在回复…' : '')
+  const status = error || (inChat && running ? searchStatus || brand.assistant + '正在回复…' : '')
     || (!inChat && work.session ? runLabels[work.session.status] : '')
   $('status').toggleAttribute('data-error', Boolean(error))
-  feedback($('status'), status)
-  const source = './assets/animations/' + activeAnimation() + '.png'
-  if (animation.getAttribute('src') !== source) animation.src = source
+  // Idle readiness stays in the composer; progress and errors retain their text and stop action.
+  $('composer-ready').hidden = !ready || busy || running || Boolean(error)
+  feedback($('status'), status === runLabels.idle && !error ? '' : status)
+  if (brand.companion) {
+    const source = './assets/animations/' + activeAnimation() + '.png'
+    if (animation.getAttribute('src') !== source) animation.src = source
+  }
   updateComposerActions()
 }
 
@@ -1457,7 +1468,7 @@ async function pair(event) {
   feedback(pairError, '')
   try {
     const { token } = await requestJson(origin + '/v1/pair', {
-      method: 'POST', data: { code, label: '绫音手机' },
+      method: 'POST', data: { code, label: brand.name + '手机' },
     })
     if (typeof token !== 'string' || !token) throw new Error('Invalid pairing response')
     Object.assign(work, { origin, token, selected: '', summary: null, session: null, error: '' })
@@ -1485,7 +1496,6 @@ $('work-mode').addEventListener('click', () => chooseDraftMode('work'))
 $('quick-new-session').addEventListener('click', beginNewConversation)
 $('expand-prompt').addEventListener('click', () => setComposerExpanded(!composerExpanded, true))
 $('open-settings').addEventListener('click', () => {
-  sidebar.close()
   if (mode === 'chat') openModelSettings()
   else if (desktopControl) openDesktopPairing()
   else openWorkSettings()
@@ -1550,6 +1560,10 @@ window.yingluoBack = () => {
   if (effortPopover) { effortPopover.hidePopover(); return true }
   if ($('model-picker').querySelector('button[aria-expanded="true"]')) { modelPicker?.close(); return true }
   const dialogs = [...document.querySelectorAll('dialog[open]')]
+  // A native child sheet stays above React settings; settings stay above the history drawer.
+  const child = dialogs.filter(dialog => dialog !== sidebar).at(-1)
+  if (child) { child.close(); return true }
+  if (modelSettings?.back()) return true
   if (!dialogs.length) {
     if (readingNavigation.close()) return true
     if (composerExpanded) { setComposerExpanded(false); return true }

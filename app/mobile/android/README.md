@@ -1,6 +1,6 @@
 # 绫音 Android
 
-用 Node.js 22 或更高版本、JDK 17 或更高版本，以及带 Android SDK Platform 36 或更高版本和 Build Tools 的 Android SDK 打包。构建器读取 `JAVA_HOME`、`ANDROID_HOME` 或工具的常用安装位置。
+用 Node.js 24.9 或更高版本、JDK 17 或更高版本，以及带 Android SDK Platform 36 或更高版本和 Build Tools 的 Android SDK 打包。构建器读取 `JAVA_HOME`、`ANDROID_HOME` 或工具的常用安装位置。
 
 在 `app` 中安装工作区依赖，再从工作区根目录执行：
 
@@ -9,6 +9,8 @@ node app/mobile/android/build.mjs
 ```
 
 产物是 `app/mobile/Yingluo.apk`，支持 Android 8.0 或更高版本。构建会使用电脑上的调试签名。跨电脑重建想覆盖安装时，需要沿用同一签名密钥。
+
+无猫娘的独立版本使用 `node app/mobile/android/build.mjs --variant mobile-ai`，产物为 `app/mobile/mobile-AI.apk`。它使用独立包名 `app.mobileai.mobile` 和链接协议 `mobile-ai://pair`，可与绫音共存，数据及凭据由 Android 应用沙箱隔离。App 内扫码仍可读取现有电脑控制页生成的配对二维码。该版本不打包角色图片和动画，OPPO 通知改用普通状态图标。构建只在临时目录应用品牌差异，不覆盖绫音 APK。
 
 应用从 APK 加载界面、Harness 模型管理页和动画。Chat 在「设置 → 模型」管理服务商及 API Key，再从输入框旁选择模型。Work 需要在手机上输入电脑服务地址和一次性配对码。若手机相机能打开绫音配对链接，也可以通过该链接填写这两项内容。API Key 和配对令牌保存在 Android Keystore 加密的本地存储中。
 

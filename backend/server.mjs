@@ -31,6 +31,8 @@ const previewFiles = new Map([
   ['/app.js', ['app/mobile/ui/app.js', 'text/javascript']],
   ['/desktop-library.js', ['app/mobile/ui/desktop-library.js', 'text/javascript']],
   ['/desktop-history.js', ['app/mobile/ui/desktop-history.js', 'text/javascript']],
+  ['/panel-motion.js', ['app/mobile/ui/panel-motion.js', 'text/javascript']],
+  ['/brand.js', ['app/mobile/ui/brand.js', 'text/javascript']],
   ['/http.js', ['app/mobile/ui/http.js', 'text/javascript']],
   ['/event-stream.js', ['app/mobile/ui/event-stream.js', 'text/javascript']],
   ['/image-viewer.js', ['app/mobile/ui/image-viewer.js', 'text/javascript']],

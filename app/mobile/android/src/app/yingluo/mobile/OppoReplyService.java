@@ -69,7 +69,7 @@ public final class OppoReplyService extends Service {
         current = this;
         manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "OPPO 回复实况", NotificationManager.IMPORTANCE_DEFAULT);
-        channel.setDescription("显示回复阶段，完成后显示绫音挥手与回复完成");
+        channel.setDescription("显示回复阶段和回复完成状态");
         channel.setSound(null, null);
         channel.enableVibration(false);
         manager.createNotificationChannel(channel);
@@ -104,11 +104,12 @@ public final class OppoReplyService extends Service {
     };
 
     private Notification notification() {
-        String animation = finished && success ? "reply_waving" : "reply_running";
+        boolean companion = getResources().getBoolean(getResources().getIdentifier("companion_enabled", "bool", getPackageName()));
+        String animation = companion ? (finished && success ? "reply_waving" : "reply_running") : "reply_status";
         // Supply the original animation, but let SystemUI decide playback. On the tested
         // ColorOS 17 it renders a still; per-frame notify() hides the critical text.
         int icon = getResources().getIdentifier(animation, "drawable", getPackageName());
-        Intent open = new Intent(this, MainActivity.class).setAction("app.yingluo.mobile.OPEN_REPLY")
+        Intent open = new Intent(this, MainActivity.class).setAction(getPackageName() + ".OPEN_REPLY")
                 .putExtra("reply_session", sessionId).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         long seconds = (SystemClock.elapsedRealtime() - started) / 1000;

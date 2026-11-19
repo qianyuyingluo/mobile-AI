@@ -204,7 +204,8 @@ public final class MainActivity extends Activity {
         String reply = intent.getStringExtra("reply_session");
         if (reply != null && reply.length() <= 128) { pendingReply = reply; forwardReply(); }
         Uri link = intent.getData();
-        if (link != null && "yingluo".equals(link.getScheme()) && "pair".equals(link.getHost())) {
+        String scheme = getString(getResources().getIdentifier("pair_scheme", "string", getPackageName()));
+        if (link != null && scheme.equals(link.getScheme()) && "pair".equals(link.getHost())) {
             pendingPair = link;
             forwardPairLink();
         }

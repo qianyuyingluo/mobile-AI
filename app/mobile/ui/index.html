@@ -56,7 +56,10 @@
         <div id="attachment-list" class="attachment-list" aria-label="待发送附件" hidden></div>
         <input id="file-input" type="file" multiple hidden>
         <label class="sr-only" for="prompt">消息</label>
-        <div class="prompt-tools"><button type="button" id="expand-prompt" class="prompt-expand" aria-expanded="false" aria-controls="prompt">展开</button></div>
+        <div class="prompt-tools">
+          <span id="composer-ready" class="composer-ready" role="img" aria-label="就绪" title="就绪" hidden></span>
+          <button type="button" id="expand-prompt" class="prompt-expand" aria-label="展开输入框" title="展开输入框" aria-expanded="false" aria-controls="prompt"><svg aria-hidden="true"><use href="#dsw-icon-fullscreen-outline-regular"/></svg></button>
+        </div>
         <textarea id="prompt" rows="1" maxlength="12000" placeholder="发消息给绫音…" enterkeyhint="enter"></textarea>
         <div class="composer-actions" hidden>
           <button type="button" id="attach" class="control attach" aria-label="添加附件" title="添加附件">＋</button>

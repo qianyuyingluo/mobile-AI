@@ -10,7 +10,8 @@ import { deriveKeyRef, type ModelsSettingsState } from '../../packages/client/ui
 import { zh } from '../../packages/client/ui-settings-models/src/client/locales.ts'
 import { providerEndpoint, providerProtocol, providerProtocols } from '../ui/chat-providers.js'
 import { requestJson } from '../ui/http.js'
-import { Modal } from './primitives.ts'
+import { SettingsSheet } from './settings-sheet.tsx'
+import { closeTopModal } from '../../packages/client/ui-primitives/src/useModalLayer.ts'
 import './model-settings.css'
 
 type Provider = {
@@ -65,6 +66,7 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   const root = createRoot(element)
   const state = createSnapshotStore(empty)
   let open = false
+  let afterClose: (() => void) | undefined
   let revision = 0
 
   function namespace(): SettingsNamespaceView {
@@ -187,17 +189,21 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   const useSnapshot: NonNullable<Props['useSnapshot']> = selector =>
     selector(useSyncExternalStore(state.subscribe, state.getSnapshot))
   function render() {
-    root.render(<Modal open={open} title="设置" closeLabel="关闭" onClose={close}
-      className="yingluo-model-settings" contentClassName="yingluo-model-settings-content">
-      {open && settings.openMemory && <button type="button" className="control" onClick={() => { close(); settings.openMemory?.() }}>Chat 记忆</button>}
-      {open && <ModelsSection controller={controller} useSnapshot={useSnapshot} t={t}
-        operations={operations} schema={schema} renderSlot={neverRender} />}
-    </Modal>)
+    root.render(<SettingsSheet open={open} onClose={() => close()} onClosed={() => { const next = afterClose; afterClose = undefined; next?.() }}>
+      {settings.openMemory && <button type="button" className="control" onClick={() => close(settings.openMemory)}>Chat 记忆</button>}
+      <ModelsSection controller={controller} useSnapshot={useSnapshot} t={t}
+        operations={operations} schema={schema} renderSlot={neverRender} />
+    </SettingsSheet>)
   }
-  function close() { open = false; render() }
+  function close(next?: () => void) { afterClose = next; open = false; render() }
   return {
-    open() { update(); open = true; render() },
+    open() { afterClose = undefined; update(); open = true; render() },
     close,
+    back() {
+      if (!document.querySelector('.yingluo-model-settings')) return false
+      closeTopModal(document)
+      return true
+    },
     update() { if (open) update() },
   }
 }
