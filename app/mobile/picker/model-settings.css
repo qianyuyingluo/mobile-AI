@@ -1,0 +1,39 @@
+.yingluo-model-settings {
+  width: min(740px, 100%);
+  max-height: 100%;
+  padding-bottom: 0;
+}
+
+.yingluo-model-settings-content {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 24px;
+}
+
+.yingluo-model-settings-content > :first-child {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.yingluo-model-settings input,
+.yingluo-model-settings select {
+  font-size: 16px;
+}
+
+@media (max-width: 440px) {
+  .yingluo-model-settings [role='tablist'] {
+    display: grid;
+    width: 100%;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .yingluo-model-settings [role='tab'] {
+    height: 40px;
+    padding-inline: 4px;
+    white-space: normal;
+  }
+}

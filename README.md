@@ -4,9 +4,11 @@
 
 界面复用 DeepSeek Harness 的模型选择器、模型设置与 Markdown 渲染组件。模型通过 API Key 配置，不要求登录 DeepSeek 账号。
 
+`app/` 是随主仓库一起提交的定制源码目录，直接克隆本仓库即可获得，不需要初始化 Git 子模块。本地参考副本 `deepseek-harness/` 不上传；依赖、密钥和本地 Git 历史备份也不纳入版本控制。
+
 ## 快速开始
 
-**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.1**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
+**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.4**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
 
 | 模式 | 用途 | 是否需要电脑运行 |
 | --- | --- | --- |
@@ -57,7 +59,8 @@ node backend/server.mjs --lan --project "C:\Projects\my-project"
 - 本地保存聊天记录，在头像侧栏中切换、删除会话。
 - 输入框自动增高、内部滚动，支持展开为大编辑区；收起后保留内容与光标。
 - Enter 换行，点击发送或按 Ctrl/Cmd+Enter 发送。
-- 向上翻阅时显示「↓」，点击返回最新消息。
+- 回复中触屏即暂停自动滚动，松手后保持阅读位置；点击「↓」回到最新消息并恢复跟随。发送新消息、切换会话时重新跟随。
+- 左侧靠上的独立右箭头可点击或向右拉开对话进度，小箭头贴近左边缘、位于正文留白内且没有背景底框，建议点击展开，占对话区域宽度的 40%；上下滑动转动弧形目录，显示问题序号和提问开头。点击条目跳到对应提问并收起，持续回复不会抢走阅读位置。支持 Chat / Work、深色模式、减少动态效果及手机返回键。
 - 图片缩略图可点击进入全屏查看，支持缩放与切换。
 - 保留 Harness 配色，提供猫娘头像、背景动画及浅色／深色主题。
 
@@ -175,9 +178,10 @@ node app/mobile/android/build.mjs
 node --test backend/agents.test.mjs backend/server.test.mjs
 node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
 node app/mobile/ui-smoke.mjs
+node app/mobile/reading-navigation-smoke.mjs
 ```
 
-界面冒烟测试需要前端依赖、已构建的组件资源和本机 Microsoft Edge。测试使用临时目录与模拟模型，覆盖手机竖屏、窄屏和横屏、输入框、流式回复、联网开关与参考资料面板；成功后打印截图目录。模拟测试通过不代表真实模型 API 或所有手机型号都已经验证。
+界面冒烟测试需要前端依赖、已构建的组件资源和本机 Microsoft Edge。测试使用临时目录与模拟模型，覆盖手机竖屏、窄屏和横屏、输入框、流式回复、联网开关与参考资料面板；阅读导航测试额外验证触屏暂停、恢复跟随、目录拖动、问题跳转和 Chat / Work 切换。成功后打印截图目录。模拟测试通过不代表真实模型 API 或所有手机型号都已经验证。
 
 ## 数据与当前范围
 

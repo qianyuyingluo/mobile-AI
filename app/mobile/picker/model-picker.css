@@ -1,0 +1,21 @@
+.yingluo-model-picker {
+  min-width: 0;
+}
+
+.yingluo-model-picker button[aria-haspopup='menu'] {
+  max-width: min(180px, 45vw);
+}
+
+@media (pointer: coarse) {
+  .yingluo-model-picker button[aria-haspopup='menu'] {
+    min-height: 44px;
+  }
+}
+
+@supports not (bottom: anchor(top)) {
+  [data-model-menu] {
+    inset: auto 12px max(110px, calc(100px + env(safe-area-inset-bottom))) 12px;
+    margin-inline: auto;
+  }
+}
+

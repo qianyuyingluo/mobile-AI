@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151517" media="(prefers-color-scheme: dark)">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'">
+  <title>绫音</title>
+  <link rel="icon" href="./assets/avatar.webp">
+  <link rel="stylesheet" href="./assets/design-platform.css">
+  <link rel="stylesheet" href="./assets/picker/model-picker.css">
+  <link rel="stylesheet" href="./app.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <button type="button" id="open-sidebar" class="brand" aria-label="展开会话侧边栏" aria-controls="sidebar" aria-expanded="false">
+        <img src="./assets/avatar.webp" alt="" width="30" height="30">
+        <span>绫音</span>
+      </button>
+      <nav id="draft-modes" class="mode-switch draft-modes" aria-label="新对话模式">
+        <button type="button" id="chat-mode" aria-pressed="true">Chat</button>
+        <button type="button" id="work-mode" aria-pressed="false">Work</button>
+      </nav>
+      <button type="button" id="quick-new-session" class="quick-new" aria-label="新建对话" title="新建对话">＋</button>
+    </header>
+
+    <section class="conversation" aria-label="对话">
+      <img id="animation" class="animation" src="./assets/animations/idle.png" alt="" aria-hidden="true" decoding="async">
+      <div class="transcript" id="transcript" tabindex="0" aria-label="会话记录">
+        <div id="thread" class="thread" role="log" aria-live="polite"></div>
+      </div>
+      <aside id="question-navigation" class="question-navigation" aria-label="对话进度" hidden>
+        <div id="question-panel" class="question-panel" aria-hidden="true" inert>
+          <div class="question-heading"><span>对话进度</span><button type="button" class="question-close" aria-label="收起对话进度">收起</button></div>
+          <nav class="question-wheel" aria-label="问题目录，上下滑动转动"></nav>
+          <div class="question-footer"><span class="question-count"></span><span>滑动查看 · 点击跳转</span></div>
+        </div>
+        <button type="button" class="question-handle" aria-label="展开对话进度" aria-controls="question-panel" aria-expanded="false"><span aria-hidden="true">→</span></button>
+      </aside>
+      <button type="button" id="scroll-bottom" class="scroll-bottom" aria-label="回到最新消息" title="回到最新消息" hidden>
+        <span aria-hidden="true">↓</span>
+      </button>
+    </section>
+
+    <footer class="message-dock">
+      <p id="search-toast" class="search-toast" role="status" aria-live="polite" hidden></p>
+      <div class="reply-status"><p id="status" class="status" role="status" aria-live="polite" hidden></p><button type="button" id="stop" class="control" hidden>停止</button></div>
+      <form id="composer" class="composer">
+        <div id="attachment-list" class="attachment-list" aria-label="待发送附件" hidden></div>
+        <input id="file-input" type="file" multiple hidden>
+        <label class="sr-only" for="prompt">消息</label>
+        <div class="prompt-tools"><button type="button" id="expand-prompt" class="prompt-expand" aria-expanded="false" aria-controls="prompt">展开</button></div>
+        <textarea id="prompt" rows="1" maxlength="12000" placeholder="发消息给绫音…" enterkeyhint="enter"></textarea>
+        <div class="composer-actions" hidden>
+          <button type="button" id="attach" class="control attach" aria-label="添加附件" title="添加附件">＋</button>
+          <button type="button" id="web-search" class="control web-search" aria-label="联网搜索" aria-pressed="false" title="开启联网搜索"><svg width="24" height="24" aria-hidden="true"><use href="#dsw-icon-globe-outline-regular"/></svg></button>
+          <div id="model-picker" class="composer-model"></div>
+          <div id="work-effort" hidden></div>
+          <button type="submit" id="send" class="action">发送</button>
+        </div>
+      </form>
+    </footer>
+  </main>
+
+  <dialog id="sidebar" class="sidebar" aria-labelledby="sidebar-title">
+    <div class="sidebar-header">
+      <button type="button" class="brand" aria-label="收起会话侧边栏" data-close autofocus>
+        <img src="./assets/avatar.webp" alt="" width="30" height="30">
+        <span id="sidebar-title">绫音</span>
+      </button>
+      <button type="button" class="sidebar-icon" aria-label="收起侧边栏" title="收起侧边栏" data-close>×</button>
+    </div>
+    <button type="button" id="new-session" class="control sidebar-new">新会话</button>
+    <div class="session-context" id="session-context"></div>
+    <nav class="mode-switch" aria-label="会话列表">
+      <button type="button" id="chat-history">聊天记录</button>
+      <button type="button" id="work-history">电脑会话</button>
+    </nav>
+    <nav class="sidebar-history" aria-labelledby="sidebar-group">
+      <h2 id="sidebar-group" class="sidebar-label">会话</h2>
+      <p id="sidebar-project" class="sidebar-project"></p>
+      <ul id="sidebar-sessions" class="sidebar-sessions"></ul>
+      <p id="sidebar-empty" class="sidebar-label" hidden>还没有会话</p>
+      <h2 id="recent-header" class="sidebar-label sidebar-recent" hidden>电脑端近期会话</h2>
+      <ul id="recent-sessions" class="sidebar-sessions" aria-labelledby="recent-header"></ul>
+      <p id="recent-empty" class="sidebar-label" hidden>当前项目暂无可续聊的电脑会话</p>
+    </nav>
+    <p id="sidebar-error" class="form-error" role="alert" hidden></p>
+    <button type="button" id="oppo-live-updates" class="control" hidden>OPPO 实况通知</button>
+    <button type="button" id="open-settings" class="control sidebar-settings">设置</button>
+  </dialog>
+
+  <dialog id="sources-sheet" class="sources-sheet" aria-labelledby="sources-title">
+    <button type="button" class="sheet-handle" data-close aria-label="收起参考资料"><span></span></button>
+    <div class="dialog-head"><h2 id="sources-title">参考资料</h2><button type="button" class="control" data-close autofocus>收起</button></div>
+    <div id="sources-list" class="sources-list"></div>
+  </dialog>
+
+  <dialog id="image-viewer" class="image-viewer" aria-label="图片预览">
+    <div class="viewer-toolbar"><span id="viewer-count"></span><button type="button" class="control" id="viewer-zoom">放大</button><button type="button" class="control" data-close>关闭</button></div>
+    <div id="viewer-stage" class="viewer-stage"><img id="viewer-image" alt=""></div>
+    <div class="viewer-footer"><button type="button" class="control" id="viewer-prev" aria-label="上一张图片">上一张</button><span id="viewer-name"></span><button type="button" class="control" id="viewer-next" aria-label="下一张图片">下一张</button></div>
+  </dialog>
+
+  <dialog id="delete-session" aria-labelledby="delete-session-title" aria-describedby="delete-session-description">
+    <div class="dialog-head">
+      <h2 id="delete-session-title">删除会话</h2>
+    </div>
+    <p id="delete-session-description" class="delete-session-description"></p>
+    <div class="delete-session-actions">
+      <button type="button" class="control" data-close autofocus>取消</button>
+      <button type="button" id="confirm-delete" class="control danger">删除</button>
+    </div>
+  </dialog>
+
+  <div id="model-settings"></div>
+  <dialog id="work-settings" aria-labelledby="work-settings-title">
+    <div class="dialog-head">
+      <h2 id="work-settings-title">电脑连接</h2>
+      <button type="button" class="control" data-close>关闭</button>
+    </div>
+    <div id="work-connected" class="fields" hidden>
+      <p id="linked-address"></p>
+      <button id="disconnect" class="control full-width" type="button">退出连接</button>
+    </div>
+    <button id="scan-pair" class="control full-width" type="button" hidden>扫码连接</button>
+    <form id="pair-form" class="fields">
+      <label for="host">电脑地址</label>
+      <input id="host" type="url" placeholder="http://192.168.1.10:8765" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <label for="pair-code">配对码</label>
+      <input id="pair-code" type="password" placeholder="电脑终端中显示的配对码" maxlength="100" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <p class="form-error" id="pair-error" role="alert" hidden></p>
+      <button type="submit" id="pair-submit" class="action full-width">连接</button>
+    </form>
+  </dialog>
+
+  <dialog id="scan-dialog" aria-labelledby="scan-title">
+    <div class="dialog-head">
+      <h2 id="scan-title">扫码连接</h2>
+      <button type="button" class="control" data-close>关闭</button>
+    </div>
+    <video id="scan-preview" class="pair-visual" playsinline muted></video>
+    <p id="scan-status" role="status"></p>
+  </dialog>
+
+  <dialog id="computer-pairing" aria-labelledby="computer-pair-title">
+    <div class="dialog-head">
+      <h2 id="computer-pair-title">手机扫码连接</h2>
+      <button type="button" class="control" data-close>关闭</button>
+    </div>
+    <div class="fields">
+      <label for="pair-addresses">电脑局域网地址</label>
+      <select id="pair-addresses"></select>
+      <img id="desktop-qr" class="pair-visual pair-qr" alt="手机配对二维码" hidden>
+      <p id="desktop-pair-status" role="status"></p>
+      <button type="button" id="new-qr" class="control">刷新二维码</button>
+    </div>
+  </dialog>
+
+  <dialog id="agent-picker" aria-labelledby="agent-title">
+    <div class="dialog-head">
+      <h2 id="agent-title">选择 Work 助手</h2>
+      <button type="button" class="control" data-close>关闭</button>
+    </div>
+    <div id="agent-options" class="agent-options"></div>
+    <p class="form-error" id="agent-error" role="alert" hidden></p>
+  </dialog>
+</body>
+</html>

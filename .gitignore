@@ -1,2 +1,7 @@
 /deepseek-harness/
 /.yingluo-uploads/
+/.local-backups/
+**/.env
+**/.env.local
+**/*.keystore
+**/*.jks
