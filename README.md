@@ -6,7 +6,7 @@
 
 ## 快速开始
 
-**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.7.7**，支持 Android 8.0 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
+**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.1**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
 
 | 模式 | 用途 | 是否需要电脑运行 |
 | --- | --- | --- |
@@ -18,6 +18,8 @@
 1. 安装 APK，点击左上角头像展开侧栏，在底部进入「设置 → 模型」。
 2. 编辑已有提供商，或添加模型提供商并填写 API Key。内置预设使用默认地址；自建服务可使用「自定义模型 API」。
 3. 在输入框旁选择模型，然后发送消息。
+
+推理强度使用分档滑动条：Chat 点击模型入口即可调整，Work 点击推理等级打开。粉色轨道和上方文字随拖动更新，只显示当前模型或 agent 支持的档位；右上角回转箭头恢复默认。Chat 选择会保存在本机，Work 选择随下一条任务发送给电脑。
 
 新建对话时，顶部可以选择 Chat / Work；发送第一条消息后隐藏模式选择。右上角圆形「＋」用于新建对话，输入框左侧「＋」用于添加附件。左右顶部入口的底框以 20% 不透明度显示，文字、头像和图标保持清晰；点击输入框开始编辑时，才展开附件、联网、模型和发送工具栏，发送后收起。
 
@@ -58,6 +60,19 @@ node backend/server.mjs --lan --project "C:\Projects\my-project"
 - 向上翻阅时显示「↓」，点击返回最新消息。
 - 图片缩略图可点击进入全屏查看，支持缩放与切换。
 - 保留 Harness 配色，提供猫娘头像、背景动画及浅色／深色主题。
+
+### OPPO 回复实况
+
+Chat 回复中返回桌面后，通过原生实况通知显示绫音与当前阶段；完整回复结束后切换 `waving` 素材，右侧显示「回复完成」，15 秒后收起，点击通知可返回对应对话。显示等待、思考、搜索、回复阶段、用时与已回复字数，不估算完成百分比；停止和失败不会显示回复完成。
+
+**动画限制：**当前 ColorOS 17 实测只显示动画的静态帧。逐帧更新通知虽能使角色动起来，但会让右侧文字反复消失，正式包保留文字稳定的版本。连续跑步／waving 动画尚未完成，不能把静态姿势视作动画验收通过。
+
+在侧栏「OPPO 实况通知」中打开系统设置：
+
+1. 通知管理中开启「允许通知」和「流体云显示实时活动」。
+2. 应用详情 → 耗电管理 → 选择「完全允许后台行为」。仅开启 Android 电池优化豁免仍可能被 ColorOS 冻结。
+
+仅针对 OPPO Android 16+ 启用；本次真机为 OPPO Find X7 / ColorOS 17。普通浏览器、其他品牌及 Work 的电脑 agent 暂不接入此功能。使用前台网络服务，无悬浮窗、无通知读取权限。强行停止应用、系统杀进程或断网仍会中断当前请求。
 
 ### 联网搜索
 
@@ -146,7 +161,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\app\Start-Yingluo.ps1
 
 ### 构建 Android APK
 
-除前端依赖外，还需要 JDK 17+、Android SDK Platform 34+ 和 Android Build Tools。设置 `JAVA_HOME` 与 `ANDROID_HOME`，然后运行：
+除前端依赖外，还需要 JDK 17+、Android SDK Platform 36+ 和 Android Build Tools。设置 `JAVA_HOME` 与 `ANDROID_HOME`，然后运行：
 
 ```powershell
 node app/mobile/android/build.mjs
