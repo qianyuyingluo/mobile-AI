@@ -59,13 +59,16 @@ export function mountModelPicker(element: HTMLElement, { onSelect }: {
   }
 
   let locked: boolean | undefined
+  let previousGroups: readonly Provider[] = []
   let previous = ''
   return {
     update(next: PickerState) {
       current = next
-      const signature = JSON.stringify([next.selection, next.providers])
-      const changed = signature !== previous
-      if (signature !== previous) {
+      const signature = JSON.stringify(next.selection)
+      const changed = signature !== previous || next.providers.length !== previousGroups.length
+        || next.providers.some((group, i) => group !== previousGroups[i])
+      if (changed) {
+        previousGroups = next.providers
         previous = signature
         // The companion owns the effort slider in the options slot; keep the Harness model list.
         const groups = next.providers.map(group => ({ ...group, models: group.models.map(({ reasoning, ...model }) => model) }))

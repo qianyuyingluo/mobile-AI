@@ -38,7 +38,7 @@ test('provider streams only publish visible text and require terminal evidence',
   assert.throws(() => reader.finish(), /interrupted/)
   assert.throws(() => reader.event({ data: '{"type":"error"}' }), /failed/)
   const { providers } = restoreChatModels(null, null)
-  for (const provider of providers) {
+  for (const provider of providers.filter(p => !p.unavailable)) {
     const request = streamingChatRequest(provider, provider.models[0].id, 'fixture', [], 'low')
     if (provider.protocol === 'gemini') assert.match(request.url, /:streamGenerateContent\?alt=sse$/)
     else assert.equal(request.data.stream, true)
@@ -102,11 +102,11 @@ test('exposed thinking streams separately from answers and opaque signatures', (
 test('summary requests are limited to supported model families without enabling DeepSeek thinking', () => {
   const { providers } = restoreChatModels(null, null)
   const openai = providers.find(provider => provider.id === 'openai')
-  assert.deepEqual(streamingChatRequest(openai, 'gpt-5.4', '', [], '').data.reasoning, { summary: 'auto' })
+  assert.deepEqual(streamingChatRequest(openai, 'gpt-5.4', '', [], '').data.reasoning, { effort: 'none', summary: 'auto' })
   assert.equal(streamingChatRequest(openai, 'gpt-4o-mini', '', [], '').data.reasoning, undefined)
   assert.equal(streamingChatRequest(openai, 'gpt-5-chat-latest', '', [], '').data.reasoning, undefined)
   const google = providers.find(provider => provider.id === 'google')
-  assert.equal(streamingChatRequest(google, 'gemini-2.5-flash', '', [], '').data.generationConfig.thinkingConfig.includeThoughts, true)
+  assert.equal(streamingChatRequest(google, 'gemini-2.5-flash', '', [], 'high').data.generationConfig.thinkingConfig.includeThoughts, true)
   const deepseek = providers.find(provider => provider.id === 'deepseek-official')
   assert.equal(streamingChatRequest(deepseek, 'deepseek-flash', '', [], 'off').data.thinking.type, 'disabled')
 })

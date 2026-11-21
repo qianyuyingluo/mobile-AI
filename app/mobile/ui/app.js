@@ -7,6 +7,7 @@ import { desktopHistory, desktopRequestId } from './desktop-history.js'
 import { animateDialog } from './panel-motion.js'
 import { brand } from './brand.js'
 import { createChatMemory, memoryInstructions, memoryStream, cleanMemoryBlocks } from './chat-memory.js'
+import { searchMode, searchTransport, lookupSources, requiresSearchLookup, withSearchResults } from './provider-search.js'
 import { supportsWebSearch, sourceUrl } from './chat-providers.js'
 
 const $ = id => document.getElementById(id)
@@ -298,8 +299,8 @@ function updateModelPicker() {
   modelPicker?.update({
     selection,
     locked: mode !== 'chat' || Boolean(chat.run),
-    providers: providers.filter(provider => provider.id === 'deepseek-official'
-      || provider.id === 'saved-provider' || Object.hasOwn(profiles, provider.id) || !!chatKeys[provider.id]),
+    providers: providers.filter(provider => !provider.unavailable && (provider.id === 'deepseek-official'
+      || provider.id === 'saved-provider' || Object.hasOwn(profiles, provider.id) || !!chatKeys[provider.id])),
   })
   modelSettings?.update()
 }
@@ -1036,7 +1037,7 @@ function render() {
   $('web-search').hidden = !inChat
   $('web-search').disabled = busy || !searchSupported
   $('web-search').setAttribute('aria-pressed', String(searchSupported && webSearchEnabled))
-  $('web-search').title = !searchSupported ? '当前仅支持 DeepSeek Flash / V4 Pro 联网搜索' : webSearchEnabled ? '联网搜索已开启，点击关闭' : '开启联网搜索'
+  $('web-search').title = !searchSupported ? '此接口或模型尚未接入联网搜索' : webSearchEnabled ? '联网搜索已开启，点击关闭' : '开启联网搜索'
   const session = inChat ? chatSession() : work.session
   const selectingMode = !session?.messages?.length && !(!inChat && work.selected && !session)
   $('draft-modes').hidden = !selectingMode
@@ -1378,15 +1379,32 @@ async function sendChat(text, retryAnswer = null) {
   try {
     const effort = selection.reasoningEffort
     // Failed placeholders and interrupted empty answers are not model context.
-    const history = session.messages.filter(message => message.role === 'user' || message.text?.trim())
-    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], history, effort, search, memoryInstructions(memory))
+    let history = session.messages.filter(message => message.role === 'user' || message.text?.trim())
     answer = { id: desktopRequestId(), role: 'assistant', text: '', reasoning: '', streaming: true }
+    if (model.route?.replay) { answer.reasoningEndpoint = provider.endpoint; answer.reasoningModel = model.id }
     session.messages.push(answer)
     const memoryFilter = memoryStream(delta => {
       answer.text += delta
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
     })
-    const stream = chatStreamReader(provider, delta => memoryFilter.push(delta), update => {
+    const mode = search ? searchMode(provider, model.id) : null
+    if (requiresSearchLookup(mode)) {
+      searchStatus = '正在联网搜索…'
+      render()
+      let rows = []
+      try {
+        rows = await lookupSources(mode, provider, chatKeys[provider.id], history.at(-1)?.text || '', controller.signal)
+      } catch (error) {
+        if (controller.signal.aborted) throw error
+        answer.searchFailed = true
+      }
+      controller.signal.throwIfAborted()
+      answer.sources = rows.map(({ snippet, ...source }) => source)
+      history = withSearchResults(history, rows)
+      searchStatus = rows.length ? '搜索完成，正在生成回复…' : '未取得搜索资料，正在生成回复…'
+    }
+    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], history, effort, search, memoryInstructions(memory))
+    const stream = chatStreamReader(searchTransport(provider, mode), delta => memoryFilter.push(delta), update => {
       if (update.sources) answer.sources = update.sources
       if (update.failed) answer.searchFailed = true
       if (update.status) searchStatus = update.status
@@ -1425,7 +1443,9 @@ async function sendChat(text, retryAnswer = null) {
       delete answer.nativeReply
     }
   } catch (error) {
-    chat.error = chatError(error)
+    chat.error = search && [400, 422].includes(error.status)
+      ? '服务未接受这次联网请求，请检查模型和推理档位是否支持搜索，或关闭地球按钮重试。'
+      : chatError(error)
     if (previousAnswer) {
       if (answer) session.messages.pop()
       previousAnswer.replyError = error.name === 'AbortError' ? '已停止重试，保留原回复' : '重试失败，已保留原回复'

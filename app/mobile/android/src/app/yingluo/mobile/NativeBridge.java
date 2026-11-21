@@ -138,21 +138,21 @@ final class NativeBridge {
     }
 
     private void fail(String id, String message) {
-        result(id, 0, failureBody(message));
+        result(id, 0, failureBody(message), "");
     }
 
     private static String failureBody(String message) {
         return "{\"error\":{\"message\":" + JSONObject.quote(message) + "}}";
     }
 
-    private void result(String id, int status, String body) {
+    private void result(String id, int status, String body, String sessionId) {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (!closed) {
                     view.evaluateJavascript(
                             "if (typeof window.yingluoHttpResult === 'function') window.yingluoHttpResult("
-                            + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(body) + ")", null);
+                            + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(body) + "," + JSONObject.quote(sessionId) + ")", null);
                 }
             }
         });
@@ -186,6 +186,8 @@ final class NativeBridge {
 
     private static boolean allowedHeader(String header) {
         switch (header.toLowerCase(Locale.ROOT)) {
+            case "mcp-session-id":
+            case "mcp-protocol-version":
             case "accept":
             case "authorization":
             case "content-type":
@@ -233,6 +235,7 @@ final class NativeBridge {
         public void run() {
             int status = 0;
             String reply = "";
+            String sessionId = "";
             try {
                 connection = (HttpURLConnection) validatedHttpUri(url).toURL().openConnection();
                 if (cancelled) return;
@@ -258,6 +261,8 @@ final class NativeBridge {
                     }
                 }
                 status = connection.getResponseCode();
+                String responseSession = connection.getHeaderField("Mcp-Session-Id");
+                if (responseSession != null) sessionId = responseSession;
                 if (status >= 200 && status < 300 && "text/event-stream".equals(headers.optString("Accept"))) {
                     String contentType = connection.getContentType();
                     if (contentType == null || !contentType.toLowerCase(Locale.ROOT).contains("text/event-stream")) {
@@ -294,7 +299,7 @@ final class NativeBridge {
                     boolean success = status >= 200 && status < 300 && !cancelled && progress.successful();
                     activity.runOnUiThread(() -> OppoReplyService.finish(id, success, cancelled));
                 }
-                if (requests.remove(id, this) && !cancelled) result(id, status, reply);
+                if (requests.remove(id, this) && !cancelled) result(id, status, reply, sessionId);
             }
         }
     }

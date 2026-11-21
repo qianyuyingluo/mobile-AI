@@ -118,10 +118,11 @@ async function build(work) {
   const signed = join(work, 'signed.apk')
   const manifest = join(work, 'AndroidManifest.xml')
 
-  copy(ui, assets)
+  if (args.ui !== undefined) copy(ui, assets)
   if (args.ui === undefined) {
     const pickerDist = join(work, 'picker')
     await buildMobilePicker(pickerDist)
+    copy(ui, assets)
     for (const file of ['model-picker.js', 'model-picker.css']) {
       copy(join(pickerDist, file), join(assets, 'assets', 'picker', file))
     }
