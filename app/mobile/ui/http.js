@@ -4,8 +4,8 @@ const responses = new Map()
 const chunks = new Map()
 let sequence = 0
 
-window.yingluoHttpResult = (id, status, text) => {
-  responses.get(id)?.(Number(status), text)
+window.yingluoHttpResult = (id, status, text, sessionId) => {
+  responses.get(id)?.(Number(status), text, sessionId)
 }
 window.yingluoHttpChunk = (id, text) => chunks.get(id)?.(text)
 
@@ -16,11 +16,11 @@ function nativeRequest(url, { method, headers, body, signal, onChunk }) {
       return
     }
     const id = String(++sequence)
-    const finish = (status, text) => {
+    const finish = (status, text, sessionId) => {
       responses.delete(id)
       chunks.delete(id)
       signal.removeEventListener('abort', abort)
-      resolve({ status, text })
+      resolve({ status, text, sessionId })
     }
     const abort = () => {
       responses.delete(id)
@@ -98,7 +98,7 @@ export async function requestStream(url, { token, headers: extraHeaders, data, s
 }
 
 /** Read JSON from the bundled app's native transport or an ordinary browser. */
-export async function requestJson(url, { method = 'GET', token, headers: extraHeaders, data, signal, timeout = 15000 } = {}) {
+async function bufferedRequest(url, { method = 'GET', token, headers: extraHeaders, data, signal, timeout = 15000 } = {}) {
   const controller = new AbortController()
   const cancel = () => controller.abort(signal.reason)
   if (signal?.aborted) cancel()
@@ -116,7 +116,7 @@ export async function requestJson(url, { method = 'GET', token, headers: extraHe
       const response = await fetch(url, {
         method, headers, body, signal: controller.signal, redirect: 'error', credentials: 'omit', cache: 'no-store',
       })
-      result = { status: response.status, text: await response.text() }
+      result = { status: response.status, text: await response.text(), sessionId: response.headers.get('Mcp-Session-Id') }
     }
   } finally {
     clearTimeout(timer)
@@ -132,7 +132,30 @@ export async function requestJson(url, { method = 'GET', token, headers: extraHe
     } catch { /* Non-JSON error pages have no application detail. */ }
     throw error
   }
-  return JSON.parse(result.text)
+  return result
+}
+
+export async function requestJson(url, options) {
+  return JSON.parse((await bufferedRequest(url, options)).text)
+}
+
+/** Streamable HTTP MCP POST responses may be JSON, SSE, or an empty acknowledgment. */
+export async function requestRpc(url, options) {
+  const result = await bufferedRequest(url, { ...options,
+    headers: { ...options.headers, Accept: 'application/json, text/event-stream' } })
+  const body = result.text.trim()
+  let value
+  if (body.startsWith('{')) value = JSON.parse(body)
+  else if (body) {
+    const parser = eventStreamParser(event => {
+      const message = JSON.parse(event.data)
+      if (message.id === options.data?.id) value = message
+    })
+    parser.push(body)
+    parser.finish()
+  }
+  if (value?.error || (options.data?.id !== undefined && value?.id !== options.data.id)) throw Error('Invalid search service response')
+  return { value, sessionId: result.sessionId }
 }
 
 function serverUrl(value) {

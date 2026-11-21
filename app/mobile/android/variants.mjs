@@ -4,9 +4,9 @@ import { ICON_SYMBOLS } from '../../packages/client/ui-primitives/src/icons/artw
 
 export const variants = Object.freeze({
   ayane: { name: '绫音', assistant: '绫音', companion: true, pairScheme: 'yingluo',
-    package: 'app.yingluo.mobile', apk: 'Yingluo.apk', versionCode: '27', versionName: '0.8.11' },
+    package: 'app.yingluo.mobile', apk: 'Yingluo.apk', versionCode: '30', versionName: '0.8.14' },
   'mobile-ai': { name: 'mobile-AI', assistant: 'AI', companion: false, pairScheme: 'mobile-ai',
-    package: 'app.mobileai.mobile', apk: 'mobile-AI.apk', versionCode: '1', versionName: '1.0.0' },
+    package: 'app.mobileai.mobile', apk: 'mobile-AI.apk', versionCode: '2', versionName: '1.0.1' },
 })
 
 /** Apply branding only inside the staged APK; the shared source and existing app stay intact. */

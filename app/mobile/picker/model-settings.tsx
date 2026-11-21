@@ -4,11 +4,12 @@ import Schema from '@deepseek-ai/schemastery'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '../../packages/client/store/src/index.ts'
 import { SettingsSchemaService } from '../../packages/client/ui-settings/src/client/schema.ts'
+import { ProtocolInputDefaults } from '../../packages/client/ui-settings-models/src/client/ModelListEditor.tsx'
 import { ModelsSection } from '../../packages/client/ui-settings-models/src/client/ModelsSection.tsx'
 import type { ModelsOperations } from '../../packages/client/ui-settings-models/src/client/operations.ts'
 import { deriveKeyRef, type ModelsSettingsState } from '../../packages/client/ui-settings-models/src/client/store.ts'
 import { zh } from '../../packages/client/ui-settings-models/src/client/locales.ts'
-import { providerEndpoint, providerProtocol, providerProtocols } from '../ui/chat-providers.js'
+import { providerEndpoint, providerProtocol, providerProtocols, reasoningLevels } from '../ui/chat-providers.js'
 import { requestJson } from '../ui/http.js'
 import { SettingsSheet } from './settings-sheet.tsx'
 import { closeTopModal } from '../../packages/client/ui-primitives/src/useModalLayer.ts'
@@ -19,7 +20,8 @@ type Provider = {
   name: string
   endpoint: string
   protocol: string
-  models: readonly { id: string; name: string }[]
+  unavailable?: boolean
+  models: readonly { id: string; name: string; input?: ('text' | 'image')[] }[]
 }
 type Profile = Record<string, unknown>
 type Profiles = Record<string, Profile>
@@ -31,14 +33,23 @@ type Settings = {
   writeKey: (provider: string, value: string) => boolean
 }
 
+const mobileInputs = { 'openai-completions': ['text', 'image'], 'openai-responses': ['text', 'image'] }
 const namespaceId = 'llm-pi-ai'
 const schema = SettingsSchemaService.prototype
+const modelFields = {
+  name: Schema.string(),
+  input: Schema.array(Schema.union(['text', 'image'])),
+  reasoningEfforts: Schema.union([Schema.const(false),
+    Schema.dict(Schema.union([Schema.string(), Schema.const(null)]), Schema.union(reasoningLevels))]),
+}
 const shape = Schema.object({ providers: Schema.dict(Schema.object({
   api: Schema.union(Object.keys(providerProtocols).map(id => Schema.const(id))),
   apiKeyEnv: Schema.string(),
   baseURL: Schema.string(),
   displayName: Schema.string(),
-  models: Schema.array(Schema.object({ id: Schema.string(), name: Schema.string() })),
+  reasoning: Schema.union(reasoningLevels),
+  modelOverrides: Schema.dict(Schema.object(modelFields)),
+  models: Schema.array(Schema.object({ id: Schema.string(), ...modelFields })),
 })) })
 const serializedShape = shape.toJSON() as SettingsNamespaceView['schema']
 const t = (key: keyof typeof zh) => zh[key]
@@ -48,6 +59,7 @@ const empty: ModelsSettingsState = {
 }
 
 function inspectProfile(id: string, profile: Profile, preset: Provider | undefined): void {
+  if (preset?.unavailable && !(profile.baseURL && typeof profile.api === 'string' && Object.hasOwn(providerProtocols, profile.api))) throw new Error('该提供商需要专用协议或云端配置，暂不支持手机直连。')
   if (id === 'deepseek-account') throw new Error('请选择 API Key 提供商。')
   const api = typeof profile.api === 'string' ? profile.api : preset && providerProtocol(preset)
   const endpoint = typeof profile.baseURL === 'string' && profile.baseURL ? profile.baseURL : preset?.endpoint
@@ -72,7 +84,8 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   function namespace(): SettingsNamespaceView {
     const { catalog, profiles } = settings.read()
     const base = Object.fromEntries(catalog.map(preset => [preset.id, {
-      displayName: preset.name, api: providerProtocol(preset), baseURL: preset.endpoint, models: preset.models,
+      displayName: preset.name, api: providerProtocol(preset), baseURL: preset.endpoint,
+      models: preset.models.map(({ id, name, input }) => ({ id, name, input })),
     }]))
     const value = Object.fromEntries([...new Set([...Object.keys(base), ...Object.keys(profiles)])]
       .map(id => [id, { ...base[id], ...profiles[id] }]))
@@ -100,7 +113,7 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
           : { configured: false, writable: !locked }
         return {
           entry: {
-            provider: id, displayName: typeof profile?.displayName === 'string' && profile.displayName || preset?.name || id,
+            provider: id, displayName: typeof profile?.displayName === 'string' && profile.displayName || (preset?.unavailable && !profile?.baseURL ? preset.name + '（暂不支持手机直连）' : preset?.name) || id,
             settingsNs: namespaceId, settingsPath: ['providers', id], active: configured,
             declared: !preset, defaultBaseURL: preset?.endpoint,
           },
@@ -160,7 +173,7 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
     async discoverModels(_ns, request) {
       const preset = settings.read().catalog.find(item => item.id === request.provider)
       if (preset && (!request.baseURL || request.baseURL === preset.endpoint)) {
-        return { kind: 'found', models: preset.models }
+        return { kind: 'found', models: preset.models.map(({ id, name, input }) => ({ id, name, inputModalities: input })) }
       }
       try {
         if (!request.baseURL || !request.api) throw new Error()
@@ -177,7 +190,9 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
         if (!Array.isArray(rows)) throw new Error()
         return { kind: 'found', models: rows.flatMap(row => {
           const id = row?.id ?? row?.name?.replace(/^models\//, '')
-          return typeof id === 'string' && id ? [{ id, name: row.display_name ?? row.displayName ?? id }] : []
+          const declared = row?.architecture?.input_modalities ?? row?.input_modalities
+          const inputModalities = Array.isArray(declared) ? declared.filter(m => m === 'text' || m === 'image') : undefined
+          return typeof id === 'string' && id ? [{ id, name: row.display_name ?? row.displayName ?? id, inputModalities }] : []
         }) }
       } catch {
         return { kind: 'refused', message: '无法获取模型列表，可以手动添加模型。' }
@@ -191,8 +206,8 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   function render() {
     root.render(<SettingsSheet open={open} onClose={() => close()} onClosed={() => { const next = afterClose; afterClose = undefined; next?.() }}>
       {settings.openMemory && <button type="button" className="control" onClick={() => close(settings.openMemory)}>Chat 记忆</button>}
-      <ModelsSection controller={controller} useSnapshot={useSnapshot} t={t}
-        operations={operations} schema={schema} renderSlot={neverRender} />
+      <ProtocolInputDefaults.Provider value={mobileInputs}><ModelsSection controller={controller} useSnapshot={useSnapshot} t={t}
+        operations={operations} schema={schema} renderSlot={neverRender} /></ProtocolInputDefaults.Provider>
     </SettingsSheet>)
   }
   function close(next?: () => void) { afterClose = next; open = false; render() }

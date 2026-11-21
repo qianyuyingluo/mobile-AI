@@ -421,6 +421,20 @@ body[data-ds-dark-theme] .conversation[data-active] .animation { opacity: .36; }
 .message-markdown > div > :last-child { margin-block-end: 0; }
 .message-markdown .katex-display { overflow-x: auto; overflow-y: hidden; }
 
+.message-reasoning { margin: 2px 4px 8px; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+.message-reasoning summary { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; }
+.message-reasoning summary::-webkit-details-marker { display: none; }
+.message-reasoning summary svg { flex: none; }
+.message-reasoning[open] summary svg { transform: rotate(90deg); }
+.reasoning-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; padding: 2px 0 8px 12px; border-left: 1px solid var(--dsw-alias-border-l2); }
+.reply-actions { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.reply-retry { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; flex: none; }
+.reply-retry svg { width: 18px; height: 18px; }
+.reply-retry:active { background: var(--dsw-alias-bg-layer-2); }
+.reply-retry:disabled { opacity: .35; cursor: default; }
+.reply-retry:focus-visible, .message-reasoning summary:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }
+.reply-error { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+
 .message-name {
   margin: 0 0 4px 4px;
   color: var(--dsw-alias-label-secondary);

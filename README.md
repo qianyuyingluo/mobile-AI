@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.11**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
+**Android 安装包：[`app/mobile/Yingluo.apk`](app/mobile/Yingluo.apk)**，当前本地构建版本为 **0.8.14**，支持 Android 8.0 及以上。OPPO 流体云功能需要 Android 16 及以上。源码副本中如果没有 APK，可以按下文步骤构建。
 
 **无角色版本：[`app/mobile/mobile-AI.apk`](app/mobile/mobile-AI.apk)**，应用名 **mobile-AI**，版本 **1.0.0**。去掉猫娘头像、背景动画和角色名称，左上角改用齿轮进入会话与设置，保留 Chat、Work、模型配置和手机 Chat 文本记忆。包名为 `app.mobileai.mobile`，可与绫音（`app.yingluo.mobile`）同时安装；两款应用的聊天记录、记忆、API Key 和配对状态各自独立，需要单独配置。OPPO 回复通知使用普通状态图标。
 
@@ -26,6 +26,8 @@
 1. 安装 APK，点击左上角头像展开侧栏，在底部进入「设置 → 模型」。
 2. 编辑已有提供商，或添加模型提供商并填写 API Key。内置预设使用默认地址；自建服务可使用「自定义模型 API」。
 3. 在输入框旁选择模型，然后发送消息。
+
+手机 Chat 在打包时从项目锁定的 DeepSeek Harness 生成离线模型目录。每个模型继承原版的图片输入能力、推理档位及默认设置。在「添加模型提供商」中选 `kimi-coding`，填入 API Key 后即可在输入框选择 Kimi K3，使用低、高或最高档。需要专用协议或云端身份配置的目录项会标明暂不支持手机直连。
 
 推理强度使用分档滑动条：Chat 点击模型入口即可调整，Work 点击推理等级打开。粉色轨道和上方文字随拖动更新，只显示当前模型或 agent 支持的档位；右上角回转箭头恢复默认。Chat 选择会保存在本机，Work 选择随下一条任务发送给电脑。
 
@@ -79,6 +81,8 @@ node backend/server.mjs --lan --project "C:\Projects\my-project"
 ### 聊天与阅读
 
 - Chat 流式输出，支持停止生成并保留已收到的回复。
+- Chat 回复下方的循环箭头可重新生成，使用当前模型、推理等级与联网开关，保留原问题和图片；重试失败或取消保留原回复。重试较早的回答会新建带「重试」后缀的聊天，原聊天及后续消息保留。输入框中的草稿和待发附件不受重试影响。已从本机缓存移除的图片需要重新添加。
+- 模型接口返回的思考内容或思考摘要显示在正文上方，默认折叠，可展开查看流式内容，随 Chat 历史保存。未返回思考内容时不显示空面板，签名或加密思考数据不会作为文本展示。此处的重试用于手机 Chat，不重新执行电脑 Work 任务。
 - 渲染 Markdown 标题、表格、代码块与数学公式。
 - 本地保存聊天记录，在头像侧栏中切换、删除会话。
 - 输入框自动增高、内部滚动，支持展开为大编辑区；收起后保留内容与光标。
@@ -105,7 +109,9 @@ Chat 回复中返回桌面后，通过原生实况通知显示绫音与当前阶
 
 输入框「＋」旁边的地球按钮用于开关联网搜索：**黑色线条为关闭，蓝色线条为开启**，切换时显示 0.8 秒提示。
 
-当前适配 DeepSeek 提供商配置下的 `deepseek-flash` 和 `deepseek-v4-pro`，沿用该模型的 API Key。其他未适配的模型会禁用开关。开启表示允许模型调用搜索工具，是否实际搜索由模型决定。
+手机 Chat 根据当前模型和实际 API 地址选择搜索接口。DeepSeek 官方、百炼千问及智谱通用 GLM 使用模型端联网工具。OpenAI Responses 及兼容服务通过 `web_search` 调用搜索，参考资料同时读取模型引用和搜索工具返回的网址。Kimi 开放平台、Kimi Coding 和 GLM Coding Plan 使用各自的搜索服务，以当前问题检索，再把网页摘要交给模型。搜索使用当前提供商的密钥，费用和额度由套餐决定。地球按钮在已适配的接口上可用。
+
+自定义 OpenAI Chat Completions 和 Responses 接口默认允许发送图片，目录或手工设置中明确为纯文本的模型按其设置处理。
 
 回复末尾用最多三个堆叠网站图标和来源数量展示参考资料。点击后从底部弹出资料面板，可查看标题、引用标记与完整网址；点击网址打开浏览器。面板支持「收起」、点击遮罩和手机返回键关闭。网站图标不可用时显示首字母。
 
@@ -203,6 +209,7 @@ node --test backend/agents.test.mjs backend/server.test.mjs backend/desktop-sync
 node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
 node --test app/mobile/chat-memory.test.mjs
 node app/mobile/chat-memory-smoke.mjs
+node app/mobile/reply-smoke.mjs
 node app/mobile/ui-smoke.mjs
 node app/mobile/reading-navigation-smoke.mjs
 ```

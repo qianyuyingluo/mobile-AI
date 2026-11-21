@@ -18,7 +18,7 @@
  * rows the user can still fill in by hand.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { AnimatedRows, Button, IconPlusOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -149,6 +149,8 @@ function adopt(candidate: LlmDiscoveredModel): ModelDraft {
   }
 }
 
+export const ProtocolInputDefaults = createContext<Readonly<Record<string, readonly string[]>>>({})
+
 /**
  * Render the model list with its fetch action.
  * @param props - the drafted rows, probe target, wire face, and copy.
@@ -156,6 +158,7 @@ function adopt(candidate: LlmDiscoveredModel): ModelDraft {
  */
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, operations, t, disabled, onBusyChange } = props
+  const protocolInputs = useContext(ProtocolInputDefaults)
   const { catalogProvider } = props
   const [busy, setBusy] = useState(false)
   useEffect(() => { onBusyChange(busy) }, [busy, onBusyChange])
@@ -356,7 +359,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             model={model}
             position={index + 1}
             inputField="input"
-            inputFallback={inputDefaults.get(textOf(model, 'id')) ?? props.defaultInput}
+            inputFallback={inputDefaults.get(textOf(model, 'id')) ?? props.defaultInput ?? protocolInputs[probe.api ?? '']}
             inputLoading={catalogProvider !== undefined && catalog === undefined}
             reasoningLevels={props.reasoningLevels}
             reasoningLevelsOnly={props.reasoningLevelsOnly}

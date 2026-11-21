@@ -2,15 +2,17 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'vite'
+import { generateCatalog } from '../generate-catalog.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const app = resolve(here, '..', '..')
 const web = createRequire(join(app, 'apps', 'web', 'package.json'))
 const packages = join(app, 'packages')
-const httpModule = resolve(here, '../ui/http.js').replaceAll('\\', '/')
+const sharedModules = ['http.js', 'chat-providers.js']
 
 /** Build the shared ESM and CSS assets for Android and the browser companion. */
 export async function buildMobilePicker(outDir = join(here, 'dist')) {
+  await generateCatalog()
   const reactAliases = ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client']
     .map(id => ({ find: new RegExp('^' + id.replaceAll('/', '\\/') + '$'), replacement: web.resolve(id) }))
   await build({
@@ -30,8 +32,8 @@ export async function buildMobilePicker(outDir = join(here, 'dist')) {
       target: 'es2022',
       rollupOptions: {
         // The page owns the native response callback. Reuse its HTTP module from this bundle.
-        external: id => id === '../ui/http.js' || id.replaceAll('\\', '/') === httpModule,
-        output: { paths: () => '../../http.js', codeSplitting: false },
+        external: id => sharedModules.some(file => id === '../ui/' + file || id.replaceAll('\\', '/') === resolve(here, '../ui', file).replaceAll('\\', '/')),
+        output: { paths: id => '../../' + id.split(/[\\/]/).at(-1), codeSplitting: false },
       },
       lib: {
         entry: join(here, 'model-picker.tsx'),
