@@ -170,7 +170,7 @@ function feedback(element, text) {
   element.hidden = !text
 }
 
-function redact(text) {
+function redact(text = '') {
   let visible = text
   for (const secret of [...Object.values(chatKeys), work.token]) {
     if (secret) visible = visible.replaceAll(secret, '••••')
@@ -786,7 +786,7 @@ function renderSources(row, message) {
   sources.slice(0, 3).forEach(item => stack.append(sourceIcon(item)))
   overview.append(stack, node('span', sources.length + ' 个来源'))
   if (sources.length) footer.append(overview)
-  row.append(footer)
+  row.insertBefore(footer, row.querySelector('.reply-actions'))
 }
 
 function openSources(sources) {
@@ -806,6 +806,37 @@ function openSources(sources) {
   }
   sheet.showModal()
   list.scrollTop = 0
+}
+
+function renderReplyDetails(row, message) {
+  let thought = row.querySelector('.message-reasoning')
+  if (message.reasoning && !thought) {
+    thought = node('details', '', 'message-reasoning')
+    const summary = node('summary')
+    summary.append(sidebarIcon('chevron-right-outline'), node('span'))
+    thought.append(summary, node('div', '', 'reasoning-text'))
+    row.querySelector('.message-name').after(thought)
+  }
+  if (thought) {
+    const thinking = Boolean(message.streaming && !message.text)
+    thought.querySelector('summary span').textContent = thinking ? '正在思考…' : message.interrupted ? '思考内容 · 已中断' : '思考内容'
+    thought.querySelector('.reasoning-text').textContent = redact(message.reasoning)
+  }
+  if (mode !== 'chat') return
+  let actions = row.querySelector('.reply-actions')
+  if (!actions) {
+    actions = node('div', '', 'reply-actions')
+    const retry = button('', () => void sendChat('', message), 'reply-retry')
+    retry.setAttribute('aria-label', '重新生成回复')
+    retry.title = '重新生成回复'
+    retry.append(sidebarIcon('refresh-outline'))
+    actions.append(retry)
+    row.append(actions)
+  }
+  actions.querySelector('button').disabled = Boolean(chat.run) || !chatReady()
+  let error = actions.querySelector('.reply-error')
+  if (message.replyError && !error) { error = node('span', '', 'reply-error'); actions.append(error) }
+  if (error) { error.textContent = message.replyError || ''; error.hidden = !message.replyError }
 }
 
 function messageRow(message, assistantName, richMessages) {
@@ -828,8 +859,8 @@ function messageRow(message, assistantName, richMessages) {
     for (const file of message.attachments) list.append(attachmentItem(file, false))
     row.append(list)
   }
-  if (!user) renderSources(row, message)
-    if (mode === 'chat' && message.memoryNotice) row.append(button(message.memoryNotice, openMemory, 'control memory-notice'))
+  if (!user) { renderReplyDetails(row, message); renderSources(row, message) }
+  if (mode === 'chat' && message.memoryNotice) row.append(button(message.memoryNotice, openMemory, 'control memory-notice'))
   return row
 }
 
@@ -931,14 +962,14 @@ function renderThread() {
   const messages = session?.messages ?? []
   const events = inChat ? [] : session?.events ?? []
   const key = JSON.stringify([mode, session?.id, messages, events, Boolean(renderMarkdownMessages),
-    inChat ? [selection, chatReady()] : [linked(), Boolean(work.summary), work.selected, work.error, session?.historyBefore, loadingDesktopHistory]])
+    inChat ? [selection, chatReady(), Boolean(chat.run)] : [linked(), Boolean(work.summary), work.selected, work.error, session?.historyBefore, loadingDesktopHistory]])
   if (key === threadKey) {
     if (resetScroll) { readingNavigation.latest(); resetScroll = false }
     return
   }
   threadKey = key
   const previousTop = readingNavigation.beforeRender(resetScroll)
-  const structure = JSON.stringify([mode, session?.id, messages.map(message => [message.role,
+  const structure = JSON.stringify([mode, session?.id, messages.map(message => [message.id, message.role,
     message.role === 'user' || !renderMarkdownMessages ? message.text : '', message.attachments, message.interrupted, message.memoryNotice]), events,
     Boolean(renderMarkdownMessages), session?.historyBefore, loadingDesktopHistory, messages.length ? '' : key])
   if (structure === threadStructure && unmountMarkdown?.update) {
@@ -947,6 +978,7 @@ function renderThread() {
       entry.text = redact(assistants[index].text)
       entry.streaming = Boolean(assistants[index].streaming)
       entry.element.parentElement.toggleAttribute('data-streaming', entry.streaming)
+      renderReplyDetails(entry.element.parentElement, assistants[index])
       renderSources(entry.element.parentElement, assistants[index])
     })
     unmountMarkdown.update(mountedRichMessages)
@@ -955,10 +987,17 @@ function renderThread() {
     return
   }
   threadStructure = structure
-  const eventOpen = thread.querySelector('details')?.open ?? false
+  const eventOpen = thread.querySelector('.events')?.open ?? false
+  const expandedThoughts = new Set([...thread.querySelectorAll('.message-reasoning[open]')].map(el => el.parentElement.dataset.messageKey))
   const assistantName = inChat ? brand.assistant : agentNames[session?.agent] ?? '助手'
   const richMessages = []
-  const rows = messages.map(message => messageRow(message, assistantName, richMessages))
+  const rows = messages.map((message, index) => {
+    const row = messageRow(message, assistantName, richMessages)
+    row.dataset.messageKey = session.id + ':' + (message.id || index)
+    const thought = row.querySelector('.message-reasoning')
+    if (thought) thought.open = expandedThoughts.has(row.dataset.messageKey)
+    return row
+  })
   if (!inChat && work.desktop && session?.historyBefore > 0) {
     const older = button(loadingDesktopHistory ? '正在加载…' : '加载更早的消息', loadDesktopHistory, 'control history-older')
     older.disabled = loadingDesktopHistory
@@ -1286,17 +1325,34 @@ async function addFiles(files) {
   }
 }
 
-async function sendChat(text) {
+async function sendChat(text, retryAnswer = null) {
   const selected = selectedChatModel()
   if (!selected || !chatReady() || chat.run) return
   const { provider, model } = selected
-  const files = attachments.chat
+  let session = chatSession()
+  const retryIndex = retryAnswer ? session?.messages.indexOf(retryAnswer) ?? -1 : -1
+  const retryUser = retryIndex > 0 ? session.messages[retryIndex - 1] : null
+  if (retryAnswer && (retryUser?.role !== 'user' || retryAnswer.streaming)) return
+  const files = retryAnswer ? retryUser.attachments ?? [] : attachments.chat
+  if (retryAnswer && files.some(file => !file.data)) {
+    chat.error = '原图片已不在本机，请重新添加图片后发送'
+    render(); return
+  }
   if (files.length && !model.vision) {
     chat.error = '当前模型不支持图片，请选择支持图片的模型，例如 DeepSeek-V4.1-Flash。'
     render()
     return
   }
-  const session = chatSession() ?? newChat()
+  session ??= newChat()
+  if (retryAnswer && retryIndex < session.messages.length - 1) {
+    const original = session
+    session = { id: desktopRequestId(), title: original.title + ' · 重试', updatedAt: Date.now(),
+      messages: structuredClone(original.messages.slice(0, retryIndex + 1)) }
+    chat.sessions.unshift(session)
+    chat.selected = session.id
+  }
+  const previousAnswer = retryAnswer ? session.messages.at(-1) : null
+  if (retryAnswer) session.messages.pop()
   readingNavigation.latest()
   const controller = new AbortController()
   chat.error = ''
@@ -1305,22 +1361,26 @@ async function sendChat(text) {
   searchStatus = search ? '联网已开启，等待模型回复…' : ''
   chat.runningSessionId = session.id
   window.YingluoNative?.setReplySession?.(session.id)
-  const userMessageId = desktopRequestId()
-  session.messages.push({ id: userMessageId, role: 'user', text, ...(files.length && { attachments: files }) })
-  if (session.messages.length === 1) session.title = (text || files[0].name).slice(0, 34)
-  attachments.chat = []
-  composerEditing = false
-  prompt.blur()
-  setComposerExpanded(false)
-  saveDraft('')
+  const userMessageId = retryAnswer ? retryUser.id || desktopRequestId() : desktopRequestId()
+  if (!retryAnswer) session.messages.push({ id: userMessageId, role: 'user', text, ...(files.length && { attachments: files }) })
+  if (!retryAnswer && session.messages.length === 1) session.title = (text || files[0].name).slice(0, 34)
+  if (!retryAnswer) {
+    attachments.chat = []
+    composerEditing = false
+    prompt.blur()
+    setComposerExpanded(false)
+    saveDraft('')
+  }
   render()
   let answer
   let frame = 0
   const memory = chatMemory.snapshot()
   try {
     const effort = selection.reasoningEffort
-    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], session.messages, effort, search, memoryInstructions(memory))
-    answer = { role: 'assistant', text: '', streaming: true }
+    // Failed placeholders and interrupted empty answers are not model context.
+    const history = session.messages.filter(message => message.role === 'user' || message.text?.trim())
+    const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], history, effort, search, memoryInstructions(memory))
+    answer = { id: desktopRequestId(), role: 'assistant', text: '', reasoning: '', streaming: true }
     session.messages.push(answer)
     const memoryFilter = memoryStream(delta => {
       answer.text += delta
@@ -1330,6 +1390,9 @@ async function sendChat(text) {
       if (update.sources) answer.sources = update.sources
       if (update.failed) answer.searchFailed = true
       if (update.status) searchStatus = update.status
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
+    }, delta => {
+      answer.reasoning += delta
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
     })
     render()
@@ -1363,17 +1426,18 @@ async function sendChat(text) {
     }
   } catch (error) {
     chat.error = chatError(error)
-    if (!answer?.text) {
+    if (previousAnswer) {
       if (answer) session.messages.pop()
-      session.messages.pop()
-      attachments.chat = files
-      if (!session.messages.length) session.title = '新聊天'
-      if (mode === 'chat' && !drafts.chat) saveDraft(text)
-      else if (!drafts.chat) drafts.chat = text
-    } else answer.interrupted = true
+      previousAnswer.replyError = error.name === 'AbortError' ? '已停止重试，保留原回复' : '重试失败，已保留原回复'
+      session.messages.push(previousAnswer)
+    } else {
+      if (!answer) { answer = { id: desktopRequestId(), role: 'assistant', text: '' }; session.messages.push(answer) }
+      answer.interrupted = true
+      answer.replyError = error.name === 'AbortError' ? '已停止生成，可点击重试' : chat.error
+    }
   } finally {
     cancelAnimationFrame(frame)
-    if (answer) { delete answer.streaming; answer.text = redact(answer.text) }
+    if (answer) { delete answer.streaming; answer.text = redact(answer.text); answer.reasoning = redact(answer.reasoning) }
     session.updatedAt = Date.now()
     persistChat()
     chat.run = null

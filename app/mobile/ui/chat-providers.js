@@ -278,7 +278,11 @@ export function streamingChatRequest(provider, model, key, history, effort, webS
   }
   if (provider.protocol === 'gemini') {
     request.url = request.url.replace(':generateContent', ':streamGenerateContent') + '?alt=sse'
+    if (/^gemini-(?:2\.5|[3-9])/.test(model)) request.data.generationConfig = { thinkingConfig: { includeThoughts: true } }
   } else request.data.stream = true
+  if (provider.protocol === 'responses' && /^(?:gpt-5(?:\.\d+)?(?:-mini|-nano)?|o3|o4-mini)(?:-\d{4}-\d{2}-\d{2})?$/.test(model)) {
+    request.data.reasoning = { summary: 'auto' }
+  }
   if (instructions) {
     if (provider.protocol === 'gemini') request.data.systemInstruction = { parts: [{ text: instructions }] }
     else if (['deepseek', 'anthropic'].includes(provider.protocol)) request.data.system = instructions
@@ -288,8 +292,8 @@ export function streamingChatRequest(provider, model, key, history, effort, webS
   return request
 }
 
-/** Only visible text deltas reach the transcript; reasoning stays separate. */
-export function chatStreamReader(provider, onText, onSearch = () => {}) {
+/** Deliver answer text and provider-exposed reasoning separately; signatures remain opaque. */
+export function chatStreamReader(provider, onText, onSearch = () => {}, onReasoning = () => {}) {
   let completed = false
   let truncated = false
   const blocks = []
@@ -312,7 +316,7 @@ export function chatStreamReader(provider, onText, onSearch = () => {}) {
       if (value.error || ['error', 'response.failed', 'response.incomplete'].includes(value.type)) {
         throw new Error('Model stream failed')
       }
-      let text = ''
+      let text = '', reasoning = ''
       if (provider.protocol === 'deepseek' || provider.protocol === 'anthropic') {
         if (value.type === 'content_block_start') {
           const block = value.content_block
@@ -325,11 +329,13 @@ export function chatStreamReader(provider, onText, onSearch = () => {}) {
             results.forEach(item => source(item))
           }
           if (block?.type === 'text') block.citations?.forEach(item => source(item, true))
+          if (block?.type === 'thinking') reasoning = block.thinking
         }
         if (value.type === 'content_block_delta') {
           const block = blocks[value.index], delta = value.delta
           if (block && delta?.type === 'text_delta') block.text = (block.text || '') + delta.text
           if (block && delta?.type === 'thinking_delta') block.thinking = (block.thinking || '') + delta.thinking
+          if (delta?.type === 'thinking_delta') reasoning = delta.thinking
           if (block && delta?.type === 'signature_delta') block.signature = (block.signature || '') + delta.signature
           if (delta?.type === 'input_json_delta') inputJson.set(value.index, (inputJson.get(value.index) || '') + delta.partial_json)
           if (delta?.type === 'citations_delta') {
@@ -346,16 +352,22 @@ export function chatStreamReader(provider, onText, onSearch = () => {}) {
         if (value.type === 'message_stop') completed = true
       } else if (provider.protocol === 'responses') {
         if (value.type === 'response.output_text.delta') text = value.delta
+        if (value.type === 'response.reasoning_summary_text.delta') reasoning = value.delta
+        if (value.type === 'response.reasoning_summary_part.added' && value.summary_index > 0) reasoning = '\n\n'
         if (value.type === 'response.completed') completed = true
       } else if (provider.protocol === 'gemini') {
         text = chatResponse(provider, value)
+        reasoning = joinText(value.candidates?.[0]?.content?.parts?.filter(part => part.thought))
         if (value.candidates?.[0]?.finishReason) completed = true
       } else {
         const content = value.choices?.[0]?.delta?.content
         text = typeof content === 'string' ? content : joinText(content)
+        const thought = value.choices?.[0]?.delta?.reasoning_content ?? value.choices?.[0]?.delta?.reasoning
+        reasoning = typeof thought === 'string' ? thought : ''
         if (value.choices?.[0]?.finish_reason) completed = true
       }
       if (typeof text === 'string' && text) onText(text)
+      if (typeof reasoning === 'string' && reasoning) onReasoning(reasoning)
     },
     finish() {
       if (!completed) throw new Error('Model stream interrupted')

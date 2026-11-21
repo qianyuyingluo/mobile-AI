@@ -67,3 +67,46 @@ test('browser receives text before response ends; errors and cancellation settle
   const cancelled = requestStream(url, { data: {}, signal: controller.signal, onEvent() { controller.abort() } })
   await assert.rejects(cancelled, { name: 'AbortError' })
 })
+
+test('exposed thinking streams separately from answers and opaque signatures', () => {
+  const fixtures = [
+    ['deepseek', [
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '先分析。' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '再验证。' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'opaque' } },
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'encrypted' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: '答案' } },
+      { type: 'message_stop' },
+    ]],
+    ['anthropic', [
+      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '先分析。再验证。' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: '答案' } }, { type: 'message_stop' },
+    ]],
+    ['completions', [{ choices: [{ delta: { reasoning_content: '先分析。再验证。' } }] },
+      { choices: [{ delta: { content: '答案' }, finish_reason: 'stop' }] }]],
+    ['responses', [{ type: 'response.reasoning_summary_text.delta', delta: '先分析。再验证。' },
+      { type: 'response.output_text.delta', delta: '答案' }, { type: 'response.completed' }]],
+    ['gemini', [{ candidates: [{ content: { parts: [{ thought: true, text: '先分析。再验证。' },
+      { thoughtSignature: 'opaque' }, { text: '答案' }] }, finishReason: 'STOP' }] }]],
+  ]
+  for (const [protocol, events] of fixtures) {
+    let answer = '', reasoning = ''
+    const reader = chatStreamReader({ protocol }, chunk => { answer += chunk }, () => {}, chunk => { reasoning += chunk })
+    for (const event of events) reader.event({ data: JSON.stringify(event) })
+    reader.finish()
+    assert.equal(answer, '答案', protocol)
+    assert.equal(reasoning, '先分析。再验证。', protocol)
+  }
+})
+
+test('summary requests are limited to supported model families without enabling DeepSeek thinking', () => {
+  const { providers } = restoreChatModels(null, null)
+  const openai = providers.find(provider => provider.id === 'openai')
+  assert.deepEqual(streamingChatRequest(openai, 'gpt-5.4', '', [], '').data.reasoning, { summary: 'auto' })
+  assert.equal(streamingChatRequest(openai, 'gpt-4o-mini', '', [], '').data.reasoning, undefined)
+  assert.equal(streamingChatRequest(openai, 'gpt-5-chat-latest', '', [], '').data.reasoning, undefined)
+  const google = providers.find(provider => provider.id === 'google')
+  assert.equal(streamingChatRequest(google, 'gemini-2.5-flash', '', [], '').data.generationConfig.thinkingConfig.includeThoughts, true)
+  const deepseek = providers.find(provider => provider.id === 'deepseek-official')
+  assert.equal(streamingChatRequest(deepseek, 'deepseek-flash', '', [], 'off').data.thinking.type, 'disabled')
+})

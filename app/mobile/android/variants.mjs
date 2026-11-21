@@ -4,7 +4,7 @@ import { ICON_SYMBOLS } from '../../packages/client/ui-primitives/src/icons/artw
 
 export const variants = Object.freeze({
   'mobile-ai': { name: 'mobile-AI', assistant: 'AI', companion: false, pairScheme: 'mobile-ai',
-    package: 'app.mobileai.mobile', apk: 'mobile-AI.apk', versionCode: '1', versionName: '1.0.0' },
+    package: 'app.mobileai.mobile', apk: 'mobile-AI.apk', versionCode: '2', versionName: '1.0.1' },
 })
 
 /** Apply branding only inside the staged APK; the shared source and existing app stay intact. */

@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-**主要版本：下载 [mobile-AI.apk](app/mobile/mobile-AI.apk)**，当前版本 **1.0.0**，支持 Android 8.0 及以上。默认构建命令 `node app/mobile/android/build.mjs` 生成此 APK，也可显式使用 `--variant mobile-ai`。
+**主要版本：下载 [mobile-AI.apk](app/mobile/mobile-AI.apk)**，当前版本 **1.0.1**，支持 Android 8.0 及以上。默认构建命令 `node app/mobile/android/build.mjs` 生成此 APK，也可显式使用 `--variant mobile-ai`。
 
 猫娘版安装包：[Yingluo.apk（codex/ayane 分支）](https://github.com/qianyuyingluo/yingluo-neko/blob/codex/ayane/app/mobile/Yingluo.apk)。mobile-AI 使用 `app.mobileai.mobile`，绫音使用 `app.yingluo.mobile`，两款应用可以共存，聊天记录、记忆、API Key 与配对状态各自独立，需要分别配置。
 
@@ -77,6 +77,8 @@ node backend/server.mjs --lan --project "C:\Projects\my-project"
 ### 聊天与阅读
 
 - Chat 流式输出，支持停止生成并保留已收到的回复。
+- Chat 回复下方的循环箭头可重新生成，使用当前模型、推理等级与联网开关，保留原问题和图片；重试失败或取消保留原回复。重试较早的回答会新建带「重试」后缀的聊天，原聊天及后续消息保留。输入框中的草稿和待发附件不受重试影响。已从本机缓存移除的图片需要重新添加。
+- 模型接口返回的思考内容或思考摘要显示在正文上方，默认折叠，可展开查看流式内容，随 Chat 历史保存。未返回思考内容时不显示空面板，签名或加密思考数据不会作为文本展示。此处的重试用于手机 Chat，不重新执行电脑 Work 任务。
 - 渲染 Markdown 标题、表格、代码块与数学公式。
 - 本地保存聊天记录，在齿轮打开的侧栏中切换、删除会话。
 - 输入框自动增高、内部滚动，支持展开为大编辑区；收起后保留内容与光标。
@@ -199,11 +201,12 @@ node --test backend/agents.test.mjs backend/server.test.mjs backend/desktop-sync
 node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
 node --test app/mobile/chat-memory.test.mjs
 node app/mobile/chat-memory-smoke.mjs
+node app/mobile/reply-smoke.mjs
 node app/mobile/ui-smoke.mjs
 node app/mobile/reading-navigation-smoke.mjs
 ```
 
-界面冒烟测试需要前端依赖、已构建的组件资源和本机 Microsoft Edge。测试使用临时目录与模拟模型，覆盖手机竖屏、窄屏和横屏、输入框、流式回复、联网开关与参考资料面板；阅读导航测试额外验证触屏暂停、恢复跟随、目录拖动、问题跳转和 Chat / Work 切换。成功后打印截图目录。模拟测试通过不代表真实模型 API 或所有手机型号都已经验证。
+界面冒烟测试需要前端依赖、已构建的组件资源和本机 Microsoft Edge。测试使用临时目录与模拟模型，覆盖手机竖屏、窄屏和横屏、输入框、流式回复、联网开关与参考资料面板；回复测试验证思考内容的流式显示与持久化、重试保留草稿和原问题图片、历史分支、失败与取消恢复；阅读导航测试额外验证触屏暂停、恢复跟随、目录拖动、问题跳转和 Chat / Work 切换。成功后打印截图目录。模拟测试通过不代表真实模型 API 或所有手机型号都已经验证。
 
 模型只返回记忆更新段时，App 在保存成功后显示「已更新记忆」；更新段位于正常回答之前时也能正确过滤并保留后续正文。无效、重复或不完整的记忆段不写入，并显示具体的记忆处理提示。
 
