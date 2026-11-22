@@ -81,12 +81,12 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
   let afterClose: (() => void) | undefined
   let revision = 0
 
-  function namespace(): SettingsNamespaceView {
-    const { catalog, profiles } = settings.read()
-    const base = Object.fromEntries(catalog.map(preset => [preset.id, {
+  const base = Object.fromEntries(settings.read().catalog.map(preset => [preset.id, {
       displayName: preset.name, api: providerProtocol(preset), baseURL: preset.endpoint,
       models: preset.models.map(({ id, name, input }) => ({ id, name, input })),
     }]))
+  function namespace(): SettingsNamespaceView {
+    const { profiles } = settings.read()
     const value = Object.fromEntries([...new Set([...Object.keys(base), ...Object.keys(profiles)])]
       .map(id => [id, { ...base[id], ...profiles[id] }]))
     // All data comes from the local serializable settings document.
@@ -98,8 +98,14 @@ export function mountModelSettings(element: HTMLElement, settings: Settings) {
     }
   }
 
+  let previous: ReturnType<Settings['read']> | undefined
+  let previousRevision = -1
   function update() {
-    const { catalog, profiles, keys, locked } = settings.read()
+    const current = settings.read()
+    const { catalog, profiles, keys, locked } = current
+    if (previous?.profiles === profiles && previous.keys === keys && previous.locked === locked && previousRevision === revision) return
+    previous = current
+    previousRevision = revision
     const view = namespace()
     const rows = [...new Set([...catalog.map(p => p.id), ...Object.keys(profiles)])]
       .filter(id => id !== 'deepseek-account')

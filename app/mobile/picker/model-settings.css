@@ -8,7 +8,7 @@
 }
 .settings-sheet-layer { align-items: flex-end !important; padding: 0 !important; }
 .settings-sheet-layer > :first-child { backdrop-filter: none; }
-.settings-sheet-layer > :first-child::after { animation: none; background: #00000026; }
+.settings-sheet-layer > :first-child::after { animation: none; background: transparent; }
 .yingluo-model-settings .panel-grip { position: absolute; inset: 0 0 auto; z-index: 3; }
 .yingluo-model-settings-content > :first-child { padding-top: 38px; }
 .yingluo-model-settings-content { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
@@ -46,3 +46,17 @@
     white-space: normal;
   }
 }
+
+
+/* Hide the portal until its offscreen position and mask are initialized. */
+.yingluo-model-settings:not([data-sheet-ready]) { visibility: hidden; }
+/* Own the background from the first portal frame through the closing frame.
+   The retained drawer remains mounted, so returning restores its scroll position. */
+[role="presentation"]:has(> .yingluo-model-settings) {
+  align-items: flex-end;
+  padding: 0;
+  background: var(--dsw-alias-bg-layer-1);
+}
+body:has(.yingluo-model-settings) #sidebar,
+body:has(.yingluo-model-settings) .drawer-mask { visibility: hidden; }
+[role="presentation"]:has(> .yingluo-model-settings:not([data-sheet-ready])) > :first-child { visibility: hidden; }

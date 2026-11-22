@@ -12,9 +12,11 @@ type Message = { element: HTMLElement; text: string; streaming?: boolean }
 
 export function renderMarkdownMessages(messages: readonly Message[]) {
   const roots = messages.map(({ element }) => createRoot(element))
-  const update = (next: readonly Message[]) => flushSync(() => {
-    next.forEach(({ text, streaming }, index) => roots[index]!.render(<MarkdownText text={text} streaming={streaming} omitHtml labels={labels} />))
-  })
+  function draw({ text, streaming }: Message, index: number) {
+    roots[index]!.render(<MarkdownText text={text} streaming={streaming} omitHtml labels={labels} />)
+  }
+  const update = (next: readonly Message[]) => flushSync(() => next.forEach(draw))
+  const updateLast = (message: Message) => flushSync(() => draw(message, roots.length - 1))
   update(messages)
-  return Object.assign(() => { for (const root of roots) root.unmount() }, { update })
+  return Object.assign(() => { for (const root of roots) root.unmount() }, { update, updateLast })
 }

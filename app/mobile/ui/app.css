@@ -411,6 +411,7 @@ body[data-ds-dark-theme] .conversation[data-active] .animation { opacity: .36; }
 .message-user { align-self: flex-end; width: auto; max-width: 88%; }
 .message-assistant { width: 100%; min-width: 0; }
 .message-markdown {
+  touch-action: pan-y pinch-zoom;
   min-width: 0;
   overflow-x: auto;
   padding: 3px 5px 10px;
@@ -830,12 +831,9 @@ dialog::backdrop { background: var(--dsw-alias-bg-mask-1); }
 .brand-gear { flex: none; color: inherit; opacity: 1; }
 .sidebar .brand-gear { margin-inline: 5px; }
 
-.message-editor { width: min(90vw, 32rem); box-sizing: border-box; padding: 18px; border: 1px solid #8885; border-radius: 16px; }
-.message-editor textarea { display: block; width: 100%; box-sizing: border-box; min-height: 8rem; margin: 12px 0; font: inherit; }
-.message-editor button + button { margin-inline-start: 8px; }
 .message-versions { display: inline-flex; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-secondary); }
 .version-arrow { border: 0; background: transparent; color: inherit; min-width: 44px; height: 44px; font-size: 24px; cursor: pointer; }
 .version-arrow:disabled { opacity: .3; }
-.editor-images, .editor-attachment { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.editor-attachment img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
-.message-editor small { display: block; }
+
+#edit-context:not([hidden]) { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-inline: 8px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+#transcript, .sidebar, .sidebar-history { touch-action: pan-y pinch-zoom; }

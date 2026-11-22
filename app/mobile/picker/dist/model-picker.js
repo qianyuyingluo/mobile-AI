@@ -14106,56 +14106,92 @@ var cc = {
 //#endregion
 //#region app/mobile/ui/panel-motion.js
 function lc(e, { axis: t = "y", mask: n, handle: r, onDismiss: i, onClosed: a }) {
-	let o = matchMedia("(prefers-reduced-motion: reduce)"), s = 1, c = 0, l = 1, u = 0, d = 0, f, p = () => t === "x" ? e.offsetWidth : e.offsetHeight;
-	function m() {
-		e.style.transform = o.matches ? "none" : `translate${t.toUpperCase()}(${(t === "x" ? -1 : 1) * s * 100}%)`, e.style.opacity = o.matches ? String(1 - s) : "1", n && (n.style.opacity = String(1 - Math.max(0, Math.min(1, s)))), e.style.setProperty("--panel-progress", String(1 - Math.max(0, Math.min(1, s))));
+	let o = matchMedia("(prefers-reduced-motion: reduce)"), s = 1, c = 0, l = 1, u = 0, d = 0, f, p, m = (e) => `translate${t.toUpperCase()}(${(t === "x" ? -1 : 1) * e * 100}%)`, h = () => t === "x" ? e.offsetWidth : e.offsetHeight;
+	function g() {
+		e.style.transform = o.matches ? "none" : m(s), e.style.opacity = o.matches ? String(1 - s) : "1", n ? n.style.opacity = String(1 - Math.max(0, Math.min(1, s))) : e.style.setProperty("--panel-progress", String(1 - Math.max(0, Math.min(1, s))));
 	}
-	function h(t) {
+	function _(t) {
 		let n = Math.min((t - d) / 1e3 || .016, .032);
 		d = t;
 		let r = o.matches ? 36 : 23, i = s - l, f = Math.exp(-r * n), p = c + r * i;
 		if (s = l + (i + p * n) * f, c = (c - r * p * n) * f, Math.abs(s - l) < .001 && Math.abs(c) < .012) {
-			s = l, c = 0, u = 0, m(), e.dataset.panelState = l ? "closed" : "open", l === 1 && a?.();
+			s = l, c = 0, u = 0, g(), e.dataset.panelState = l ? "closed" : "open", l === 1 && a?.();
 			return;
 		}
-		m(), u = requestAnimationFrame(h);
+		g(), u = requestAnimationFrame(_);
 	}
-	function g(t) {
-		l = t, e.dataset.panelState = t ? "closing" : "opening", u ||= (d = performance.now(), requestAnimationFrame(h));
+	function v() {
+		if (!p) return;
+		let { slide: e, shade: t, sample: n } = p, r = n(Number(e.currentTime || 0) / 1e3);
+		s = r.position, c = r.speed, e.onfinish = null, e.cancel(), t.cancel(), p = null, g();
 	}
-	let _ = (e) => t === "x" ? -e.clientX : e.clientY;
-	function v(e) {
-		e.button !== 0 || f || e.target.closest("button, input, textarea, select, a") || (cancelAnimationFrame(u), u = 0, f = {
+	function y(t) {
+		if (p && l === t) return;
+		v(), l = t;
+		let r = o.matches ? 36 : 23, i = s - t, u = c + r * i, d = o.matches ? 140 : 380, f = (e) => {
+			let n = Math.exp(-r * e);
+			return {
+				position: Math.max(0, Math.min(1, t + (i + u * e) * n)),
+				speed: (u - r * (i + u * e)) * n
+			};
+		}, h = Array.from({ length: 25 }, (e, n) => n === 24 ? t : f(d * n / 24e3).position), _ = h.map((e) => ({ opacity: 1 - e })), y = {
+			duration: d,
+			fill: "both"
+		}, b = e.animate(o.matches ? _ : h.map((e) => ({ transform: m(e) })), y), x = n.animate(_, y);
+		p = {
+			slide: b,
+			shade: x,
+			sample: f
+		}, e.dataset.panelState = t ? "closing" : "opening", b.onfinish = () => {
+			p?.slide === b && (p = null, s = t, c = 0, g(), b.cancel(), x.cancel(), e.dataset.panelState = t ? "closed" : "open", t && a?.());
+		};
+	}
+	function b(r) {
+		if (n && t === "y" && e.animate) {
+			y(r);
+			return;
+		}
+		l = r, e.dataset.panelState = r ? "closing" : "opening", u ||= (d = performance.now(), requestAnimationFrame(_));
+	}
+	let x = (e) => t === "x" ? -e.clientX : e.clientY;
+	function S(e) {
+		e.button !== 0 || f || e.target.closest("button, input, textarea, select, a") || (v(), cancelAnimationFrame(u), u = 0, f = {
 			id: e.pointerId,
-			start: _(e),
+			start: x(e),
 			value: s,
-			last: _(e),
+			last: x(e),
 			time: performance.now(),
 			moved: !1
 		}, r.setPointerCapture(e.pointerId));
 	}
-	function y(t) {
+	function C(t) {
 		if (!f || f.id !== t.pointerId) return;
-		let n = _(t), r = n - f.start;
+		let n = x(t), r = n - f.start;
 		if (!f.moved && Math.abs(r) < 8) return;
 		f.moved = !0, e.dataset.panelState = "dragging";
 		let i = performance.now(), a = i - f.time;
-		c = a > 0 ? (n - f.last) / a * 1e3 / p() : 0, s = Math.max(0, Math.min(1, f.value + r / p())), f.last = n, f.time = i, m();
+		c = a > 0 ? (n - f.last) / a * 1e3 / h() : 0, s = Math.max(0, Math.min(1, f.value + r / h())), f.last = n, f.time = i, g();
 	}
-	function b(e) {
+	function w(e) {
 		if (!f || f.id !== e.pointerId) return;
 		let t = e.type !== "pointercancel" && f.moved && (s > .28 || s > .04 && c > .65 && performance.now() - f.time < 100);
-		f = void 0, r.hasPointerCapture(e.pointerId) && r.releasePointerCapture(e.pointerId), t ? i() : g(0);
+		f = void 0, r.hasPointerCapture(e.pointerId) && r.releasePointerCapture(e.pointerId), t ? i() : b(0);
 	}
-	return r?.addEventListener("pointerdown", v), r?.addEventListener("pointermove", y), r?.addEventListener("pointerup", b), r?.addEventListener("pointercancel", b), m(), {
+	return r?.addEventListener("pointerdown", S), r?.addEventListener("pointermove", C), r?.addEventListener("pointerup", w), r?.addEventListener("pointercancel", w), g(), {
+		get position() {
+			return s;
+		},
+		track(t, n) {
+			cancelAnimationFrame(u), u = 0, s = Math.max(0, Math.min(1, t)), c = n, e.dataset.panelState = "dragging", g();
+		},
 		open() {
-			g(0);
+			b(0);
 		},
 		close() {
-			g(1);
+			b(1);
 		},
 		dispose() {
-			cancelAnimationFrame(u), r?.removeEventListener("pointerdown", v), r?.removeEventListener("pointermove", y), r?.removeEventListener("pointerup", b), r?.removeEventListener("pointercancel", b);
+			v(), cancelAnimationFrame(u), r?.removeEventListener("pointerdown", S), r?.removeEventListener("pointermove", C), r?.removeEventListener("pointerup", w), r?.removeEventListener("pointercancel", w);
 		}
 	};
 }
@@ -14179,8 +14215,8 @@ function uc({ open: e, onClose: t, onClosed: n, children: r }) {
 			onClosed: () => {
 				a(!1), c.current.onClosed();
 			}
-		}), () => {
-			s.current?.dispose(), s.current = null;
+		}), e.dataset.sheetReady = "true", () => {
+			delete e.dataset.sheetReady, s.current?.dispose(), s.current = null;
 		};
 	}, [i]), (0, C.useLayoutEffect)(() => {
 		if (e && !i) {
@@ -14190,7 +14226,8 @@ function uc({ open: e, onClose: t, onClosed: n, children: r }) {
 		i && (e ? s.current?.open() : s.current?.close());
 	}, [e, i]), /* @__PURE__ */ (0, N.jsxs)(ir, {
 		open: i,
-		title: "设置",
+		backdropBlur: !1,
+		title: "模型与记忆设置",
 		closeLabel: "关闭",
 		onClose: t,
 		className: "yingluo-model-settings",
@@ -14240,20 +14277,20 @@ function yc(r, i, a) {
 	if (Object.hasOwn(i, "apiKeyEnv") && i.apiKeyEnv !== gs(r)) throw Error("API 密钥引用无效。");
 }
 function bc(n, r) {
-	let a = (0, T.createRoot)(n), o = un(vc), s = !1, c, l = 0;
-	function u() {
-		let { catalog: e, profiles: n } = r.read(), i = Object.fromEntries(e.map((e) => [e.id, {
-			displayName: e.name,
-			api: t(e),
-			baseURL: e.endpoint,
-			models: e.models.map(({ id: e, name: t, input: n }) => ({
-				id: e,
-				name: t,
-				input: n
-			}))
-		}])), a = Object.fromEntries([.../* @__PURE__ */ new Set([...Object.keys(i), ...Object.keys(n)])].map((e) => [e, {
-			...i[e],
-			...n[e]
+	let a = (0, T.createRoot)(n), o = un(vc), s = !1, c, l = 0, u = Object.fromEntries(r.read().catalog.map((e) => [e.id, {
+		displayName: e.name,
+		api: t(e),
+		baseURL: e.endpoint,
+		models: e.models.map(({ id: e, name: t, input: n }) => ({
+			id: e,
+			name: t,
+			input: n
+		}))
+	}]));
+	function d() {
+		let { profiles: e } = r.read(), t = Object.fromEntries([.../* @__PURE__ */ new Set([...Object.keys(u), ...Object.keys(e)])].map((t) => [t, {
+			...u[t],
+			...e[t]
 		}]));
 		return {
 			ns: fc,
@@ -14262,34 +14299,38 @@ function bc(n, r) {
 			applies: "live",
 			secrets: [],
 			revision: l,
-			base: { providers: i },
-			user: { providers: n },
-			value: { providers: a }
+			base: { providers: u },
+			user: { providers: e },
+			value: { providers: t }
 		};
 	}
-	function d() {
-		let { catalog: e, profiles: t, keys: n, locked: i } = r.read(), a = u(), s = [.../* @__PURE__ */ new Set([...e.map((e) => e.id), ...Object.keys(t)])].filter((e) => e !== "deepseek-account").map((r) => {
-			let a = e.find((e) => e.id === r), o = t[r], s = r === "deepseek-official" || r === "saved-provider" || !!o || !!n[r], c = gs(r), l = n[r] ? {
+	let f, p = -1;
+	function m() {
+		let e = r.read(), { catalog: t, profiles: n, keys: i, locked: a } = e;
+		if (f?.profiles === n && f.keys === i && f.locked === a && p === l) return;
+		f = e, p = l;
+		let s = d(), c = [.../* @__PURE__ */ new Set([...t.map((e) => e.id), ...Object.keys(n)])].filter((e) => e !== "deepseek-account").map((e) => {
+			let r = t.find((t) => t.id === e), o = n[e], s = e === "deepseek-official" || e === "saved-provider" || !!o || !!i[e], c = gs(e), l = i[e] ? {
 				configured: !0,
-				writable: !i,
+				writable: !a,
 				source: "store",
 				masked: "••••••••"
 			} : {
 				configured: !1,
-				writable: !i
+				writable: !a
 			};
 			return {
 				entry: {
-					provider: r,
-					displayName: typeof o?.displayName == "string" && o.displayName || (a?.unavailable && !o?.baseURL ? a.name + "（暂不支持手机直连）" : a?.name) || r,
+					provider: e,
+					displayName: typeof o?.displayName == "string" && o.displayName || (r?.unavailable && !o?.baseURL ? r.name + "（暂不支持手机直连）" : r?.name) || e,
 					settingsNs: fc,
-					settingsPath: ["providers", r],
+					settingsPath: ["providers", e],
 					active: s,
-					declared: !a,
-					defaultBaseURL: a?.endpoint
+					declared: !r,
+					defaultBaseURL: r?.endpoint
 				},
 				configured: s,
-				removable: s && r !== "deepseek-official" && r !== "saved-provider",
+				removable: s && e !== "deepseek-official" && e !== "saved-provider",
 				apiKeyEnv: c,
 				credential: l,
 				credentialChecks: { [c]: l }
@@ -14297,21 +14338,21 @@ function bc(n, r) {
 		});
 		o.set({
 			...vc,
-			writable: !i,
-			rows: s,
-			namespaces: /* @__PURE__ */ new Map([[fc, a]])
+			writable: !a,
+			rows: c,
+			namespaces: /* @__PURE__ */ new Map([[fc, s]])
 		});
 	}
-	let f = async (e, t) => {
+	let h = async (e, t) => {
 		let { catalog: n, profiles: i, locked: a } = r.read(), o = [...n.map((e) => e.id), ...Object.keys(i)].find((t) => gs(t) === e);
 		if (a) return "请先等待当前回复结束。";
 		if (o || t) {
 			if (!o || !r.writeKey(o, t)) return "无法保存 API 密钥。";
-			d();
+			m();
 		}
-	}, p = {
-		storeCredential: f,
-		removeCredential: (e) => f(e, ""),
+	}, g = {
+		storeCredential: h,
+		removeCredential: (e) => h(e, ""),
 		async writeSettings(e, t, n) {
 			let { catalog: i, profiles: a, locked: o } = r.read();
 			if (e !== fc || o) return {
@@ -14335,9 +14376,9 @@ function bc(n, r) {
 				let e = s.providers;
 				for (let [t, n] of Object.entries(e)) if (yc(t, n, i.find((e) => e.id === t)), [...i.map((e) => e.id), ...Object.keys(e)].some((e) => e !== t && gs(e) === gs(t))) throw Error("提供商名称与已有密钥引用冲突。");
 				if (!r.writeProfiles(e)) throw Error("无法保存模型设置。");
-				return l++, d(), {
+				return l++, m(), {
 					kind: "written",
-					view: u()
+					view: d()
 				};
 			} catch (e) {
 				return {
@@ -14383,16 +14424,16 @@ function bc(n, r) {
 				};
 			}
 		}
-	}, m = {
+	}, _ = {
 		store: o,
 		load: async () => {
-			d();
+			m();
 		}
-	}, h = (e) => e((0, C.useSyncExternalStore)(o.subscribe, o.getSnapshot));
-	function g() {
+	}, v = (e) => e((0, C.useSyncExternalStore)(o.subscribe, o.getSnapshot));
+	function y() {
 		a.render(/* @__PURE__ */ (0, N.jsxs)(uc, {
 			open: s,
-			onClose: () => _(),
+			onClose: () => b(),
 			onClosed: () => {
 				let e = c;
 				c = void 0, e?.();
@@ -14400,34 +14441,34 @@ function bc(n, r) {
 			children: [r.openMemory && /* @__PURE__ */ (0, N.jsx)("button", {
 				type: "button",
 				className: "control",
-				onClick: () => _(r.openMemory),
+				onClick: () => b(r.openMemory),
 				children: "Chat 记忆"
 			}), /* @__PURE__ */ (0, N.jsx)(is.Provider, {
 				value: dc,
 				children: /* @__PURE__ */ (0, N.jsx)(oc, {
-					controller: m,
-					useSnapshot: h,
+					controller: _,
+					useSnapshot: v,
 					t: gc,
-					operations: p,
+					operations: g,
 					schema: pc,
 					renderSlot: _c
 				})
 			})]
 		}));
 	}
-	function _(e) {
-		c = e, s = !1, g();
+	function b(e) {
+		c = e, s = !1, y();
 	}
 	return {
 		open() {
-			c = void 0, d(), s = !0, g();
+			c = void 0, m(), s = !0, y();
 		},
-		close: _,
+		close: b,
 		back() {
 			return document.querySelector(".yingluo-model-settings") ? ($n(document), !0) : !1;
 		},
 		update() {
-			s && d();
+			s && m();
 		}
 	};
 }
@@ -51442,17 +51483,22 @@ var QL = class {
 	footnotes: "脚注"
 };
 function tR(e) {
-	let t = e.map(({ element: e }) => (0, T.createRoot)(e)), n = (e) => (0, w.flushSync)(() => {
-		e.forEach(({ text: e, streaming: n }, r) => t[r].render(/* @__PURE__ */ (0, N.jsx)($L, {
+	let t = e.map(({ element: e }) => (0, T.createRoot)(e));
+	function n({ text: e, streaming: n }, r) {
+		t[r].render(/* @__PURE__ */ (0, N.jsx)($L, {
 			text: e,
 			streaming: n,
 			omitHtml: !0,
 			labels: eR
-		})));
-	});
-	return n(e), Object.assign(() => {
+		}));
+	}
+	let r = (e) => (0, w.flushSync)(() => e.forEach(n));
+	return r(e), Object.assign(() => {
 		for (let e of t) e.unmount();
-	}, { update: n });
+	}, {
+		update: r,
+		updateLast: (e) => (0, w.flushSync)(() => n(e, t.length - 1))
+	});
 }
 //#endregion
 //#region app/mobile/picker/model-picker.tsx
