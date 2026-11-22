@@ -170,7 +170,9 @@ async function build(work) {
     manifest, '--min-sdk-version', minSdk, '--target-sdk-version', targetSdk,
     '--version-code', variant.versionCode, '--version-name', variant.versionName, '-o', unaligned, compiled])
   // The Windows aapt2 -A path gives nested assets backslashes in ZIP entry names.
-  run(join(javaBin, 'jar' + exe), ['--update', '--file', unaligned, '--no-manifest',
+  // Keep ZIP metadata stable when packaging freshly generated assets and dex.
+  run(join(javaBin, 'jar' + exe), ['-J-Duser.timezone=UTC', '--update', '--file', unaligned, '--no-manifest',
+    '--date=2000-01-01T00:00:00Z',
     '-C', work, 'assets', '-C', dex, 'classes.dex'])
   run(join(tools, 'zipalign' + exe), ['-f', '4', unaligned, aligned])
   const signer = join(tools, 'lib', 'apksigner.jar')

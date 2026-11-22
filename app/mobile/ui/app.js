@@ -69,6 +69,22 @@ const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const MiB = 1024 * 1024
 let workEffort = ''
 const chat = { ...read(historyKey, { sessions: [], selected: '' }), run: null, error: '' }
+restoreSharedImages(chat.sessions)
+function restoreSharedImages(sessions) {
+  const images = new Map()
+  const references = []
+  for (const session of sessions) {
+    const histories = [session.messages, ...Object.values(session.versions || {}).flatMap(group => group.tails)]
+    for (const messages of histories) for (const message of messages || []) {
+      for (const file of message.attachments || []) {
+        if (file.imageRef == null) continue
+        if (file.data) images.set(file.imageRef, file.data)
+        else references.push(file)
+      }
+    }
+  }
+  for (const file of references) file.data = images.get(file.imageRef)
+}
 const savedConnection = read(connectionKey, { origin: '', selected: '' })
 const work = {
   ...savedConnection,
@@ -110,19 +126,27 @@ function store(key, value) {
 }
 
 function persistChat() {
+  const imageIds = new Map()
   let imageBudget = 2 * MiB
   const sessions = [...chat.sessions].sort((a, b) => Number(b.id === chat.selected) - Number(a.id === chat.selected))
   const byId = new Map(sessions.map(session => [session.id, {
     ...session,
-    messages: [...session.messages].reverse().map(({ streaming, ...message }) => message.attachments ? {
+    messages: serializeMessages(session.messages),
+    versions: Object.fromEntries(Object.entries(session.versions || {}).map(([id, group]) => [id, { ...group, tails: group.tails.map(tail => tail && serializeMessages(tail)) }])),
+  }]))
+  function serializeMessages(messages) {
+    return [...messages].reverse().map(({ streaming, ...message }) => message.attachments ? {
       ...message,
       attachments: message.attachments.map(({ name, type, data }) => {
+        if (data && imageIds.has(data)) return { name, type, imageRef: imageIds.get(data) }
         if (!data || data.length > imageBudget) return { name, type }
         imageBudget -= data.length
-        return { name, type, data }
+        const imageRef = imageIds.size
+        imageIds.set(data, imageRef)
+        return { name, type, data, imageRef }
       }),
-    } : message).reverse(),
-  }]))
+    } : message).reverse()
+  }
   store(historyKey, { sessions: chat.sessions.map(session => byId.get(session.id)), selected: chat.selected })
 }
 
@@ -840,6 +864,112 @@ function renderReplyDetails(row, message) {
   if (error) { error.textContent = message.replyError || ''; error.hidden = !message.replyError }
 }
 
+function attachMessageEditor(row, message) {
+  const body = row
+  let timer, x, y
+  const cancel = () => clearTimeout(timer)
+  function open() {
+    cancel()
+    if (!row.isConnected || document.querySelector('.message-editor') || (mode === 'chat' ? chat.run : work.action)) return
+    const dialog = node('dialog', '', 'message-editor')
+    dialog.setAttribute('aria-label', '编辑消息')
+    const field = node('textarea')
+    field.value = message.text
+    field.setAttribute('aria-label', '消息内容')
+    const files = [...(message.attachments || [])]
+    const picker = node('input')
+    picker.type = 'file'
+    picker.accept = imageTypes.join(',')
+    picker.multiple = true
+    picker.hidden = true
+    const list = node('div', '', 'editor-images')
+    const status = node('small')
+    const add = button('添加图片', () => picker.click(), 'control')
+    const refresh = () => {
+      list.replaceChildren(...files.map((file, i) => {
+        const remove = button('×', () => { files.splice(i, 1); refresh() }, 'control')
+        remove.setAttribute('aria-label', '移除 ' + file.name)
+        const item = node('span', '', 'editor-attachment')
+        if (file.data && imageTypes.includes(file.type)) {
+          const img = node('img')
+          img.src = 'data:' + file.type + ';base64,' + file.data
+          img.alt = file.name
+          item.append(img)
+        } else item.append(node('span', file.name))
+        item.append(remove)
+        return item
+      }))
+    }
+    const resend = button('重新发送', async () => {
+      const text = field.value.trim()
+      if (!text && !files.length) return
+      resend.disabled = true
+      try {
+        const payload = await Promise.all(files.map(async file => {
+          if (file.data) return file
+          if (mode === 'work' && file.desktopFile) return readDesktopFile(file)
+          throw new Error('原图已不在本机，请移除后重新添加。')
+        }))
+        if (mode === 'chat') void sendChat(text, null, message, payload)
+        else sendWork(text, payload)
+        dialog.close()
+      } catch (error) { status.textContent = error.message }
+      finally { resend.disabled = false }
+    }, 'control')
+    picker.addEventListener('change', async () => {
+      resend.disabled = add.disabled = true
+      try {
+        const added = await prepareAttachments(mode, files, [...picker.files])
+        files.push(...added)
+        status.textContent = ''
+        refresh()
+      } catch (error) { status.textContent = error.message }
+      finally { picker.value = ''; resend.disabled = add.disabled = false }
+    })
+    refresh()
+    dialog.append(node('strong', '编辑消息'), field, list, status, picker, add, button('取消', () => dialog.close(), 'control'), resend)
+    document.body.append(dialog)
+    dialog.addEventListener('close', () => dialog.remove(), { once: true })
+    dialog.showModal()
+    field.focus()
+  }
+  body.addEventListener('contextmenu', event => { event.preventDefault(); open() })
+  body.addEventListener('pointerdown', event => {
+    cancel()
+    if (!event.isPrimary || event.button !== 0) return
+    x = event.clientX
+    y = event.clientY
+    timer = setTimeout(open, 550)
+  })
+  body.addEventListener('pointermove', event => {
+    if (Math.hypot(event.clientX - x, event.clientY - y) > 9) cancel()
+  })
+  for (const name of ['pointerup', 'pointercancel', 'pointerleave']) body.addEventListener(name, cancel)
+}
+
+function versionControls(session, index, group) {
+  const nav = node('div', '', 'message-versions')
+  const arrow = (step, label) => {
+    const n = group.active + step
+    const control = button(step < 0 ? '‹' : '›', () => {
+      if (chat.run || n < 0 || n >= group.tails.length) return
+      const target = group.tails[n]
+      group.tails[group.active] = session.messages.splice(index)
+      session.messages = session.messages.concat(target)
+      group.tails[n] = null
+      group.active = n
+      threadStructure = threadKey = ''
+      persistChat()
+      render()
+    }, 'version-arrow')
+    control.disabled = n < 0 || n >= group.tails.length || Boolean(chat.run)
+    control.setAttribute('aria-label', label)
+    return control
+  }
+  nav.append(arrow(-1, '上一个回复'), node('span', (group.active + 1) + '/' + group.tails.length), arrow(1, '下一个回复'))
+  return nav
+}
+
 function messageRow(message, assistantName, richMessages) {
   const user = message.role === 'user'
   const row = node('article', '', user ? 'message message-user' : 'message message-assistant')
@@ -860,6 +990,7 @@ function messageRow(message, assistantName, richMessages) {
     for (const file of message.attachments) list.append(attachmentItem(file, false))
     row.append(list)
   }
+  if (user && (message.text || message.attachments?.length)) attachMessageEditor(row, message)
   if (!user) { renderReplyDetails(row, message); renderSources(row, message) }
   if (mode === 'chat' && message.memoryNotice) row.append(button(message.memoryNotice, openMemory, 'control memory-notice'))
   return row
@@ -902,13 +1033,17 @@ function attachmentItem(file, removable) {
   return item
 }
 
+function readDesktopFile(file) {
+  return workRequest('/library/' + file.desktopAgent + '/' + encodeURIComponent(file.desktopSession) + '/files/' + file.desktopFile,
+      { timeout: 60000 })
+}
+
 async function openDesktopFile(file, control) {
   const selected = { agent: file.desktopAgent, id: file.desktopSession }
   if (!selected.agent || !selected.id) return
   control.disabled = true
   try {
-    const result = await workRequest('/library/' + selected.agent + '/' + encodeURIComponent(selected.id) + '/files/' + file.desktopFile,
-      { timeout: 60000 })
+    const result = await readDesktopFile(file)
     if (imageTypes.includes(result.type)) { viewImages([result], 0); return }
     const dialog = node('dialog'), header = node('div', '', 'dialog-head')
     header.append(node('h2', result.name), button('关闭', () => dialog.close()))
@@ -980,7 +1115,15 @@ function renderThread() {
       entry.streaming = Boolean(assistants[index].streaming)
       entry.element.parentElement.toggleAttribute('data-streaming', entry.streaming)
       renderReplyDetails(entry.element.parentElement, assistants[index])
-      renderSources(entry.element.parentElement, assistants[index])
+      const row = entry.element.parentElement
+      renderSources(row, assistants[index])
+      const nav = row.querySelector('.message-versions')
+      if (nav) {
+        const i = messages.indexOf(assistants[index]) - 1
+        const group = session.versions[messages[i].versionGroup]
+        nav.firstElementChild.disabled = Boolean(chat.run) || group.active === 0
+        nav.lastElementChild.disabled = Boolean(chat.run) || group.active === group.tails.length - 1
+      }
     })
     unmountMarkdown.update(mountedRichMessages)
     readingNavigation.afterRender(mode + ':' + (session?.id ?? ''), messages, previousTop)
@@ -994,6 +1137,10 @@ function renderThread() {
   const richMessages = []
   const rows = messages.map((message, index) => {
     const row = messageRow(message, assistantName, richMessages)
+    if (inChat && message.role === 'assistant') {
+      const group = session.versions?.[messages[index - 1]?.versionGroup]
+      if (group) row.append(versionControls(session, index - 1, group))
+    }
     row.dataset.messageKey = session.id + ':' + (message.id || index)
     const thought = row.querySelector('.message-reasoning')
     if (thought) thought.open = expandedThoughts.has(row.dataset.messageKey)
@@ -1297,6 +1444,21 @@ async function prepareImage(file) {
   }
 }
 
+async function prepareAttachments(target, pending, files) {
+  const inChat = target === 'chat'
+  const count = inChat ? 4 : 8
+  if (pending.length + files.length > count) throw new Error('每条消息最多添加 ' + count + ' 个附件。')
+  if (!inChat && [...pending, ...files].reduce((total, file) => total + file.size, 0) > 12 * MiB) {
+    throw new Error('一条 Work 消息的文件总大小上限为 12 MB。')
+  }
+  const added = []
+  for (const file of files) {
+    const blob = inChat ? await prepareImage(file) : file
+    added.push({ name: (file.name || '图片').slice(0, 200), type: blob.type, size: blob.size, data: await fileData(blob) })
+  }
+  return added
+}
+
 async function addFiles(files) {
   const target = mode
   const pending = attachments[target]
@@ -1306,17 +1468,7 @@ async function addFiles(files) {
   state.error = ''
   render()
   try {
-    const inChat = target === 'chat'
-    const count = inChat ? 4 : 8
-    if (pending.length + files.length > count) throw new Error('每条消息最多添加 ' + count + ' 个附件。')
-    if (!inChat && [...pending, ...files].reduce((total, file) => total + file.size, 0) > 12 * MiB) {
-      throw new Error('一条 Work 消息的文件总大小上限为 12 MB。')
-    }
-    const added = []
-    for (const file of files) {
-      const blob = inChat ? await prepareImage(file) : file
-      added.push({ name: (file.name || '图片').slice(0, 200), type: blob.type, size: blob.size, data: await fileData(blob) })
-    }
+    const added = await prepareAttachments(target, pending, files)
     if (attachments[target] === pending) attachments[target] = [...pending, ...added]
   } catch (error) {
     state.error = error instanceof Error ? error.message : '无法读取附件，请重新选择。'
@@ -1326,7 +1478,7 @@ async function addFiles(files) {
   }
 }
 
-async function sendChat(text, retryAnswer = null) {
+async function sendChat(text, retryAnswer = null, edited = null, editedFiles = null) {
   const selected = selectedChatModel()
   if (!selected || !chatReady() || chat.run) return
   const { provider, model } = selected
@@ -1334,8 +1486,9 @@ async function sendChat(text, retryAnswer = null) {
   const retryIndex = retryAnswer ? session?.messages.indexOf(retryAnswer) ?? -1 : -1
   const retryUser = retryIndex > 0 ? session.messages[retryIndex - 1] : null
   if (retryAnswer && (retryUser?.role !== 'user' || retryAnswer.streaming)) return
-  const files = retryAnswer ? retryUser.attachments ?? [] : attachments.chat
-  if (retryAnswer && files.some(file => !file.data)) {
+  const source = edited || retryUser
+  const files = editedFiles ?? (source ? source.attachments ?? [] : attachments.chat)
+  if (source && files.some(file => !file.data)) {
     chat.error = '原图片已不在本机，请重新添加图片后发送'
     render(); return
   }
@@ -1344,16 +1497,19 @@ async function sendChat(text, retryAnswer = null) {
     render()
     return
   }
-  session ??= newChat()
-  if (retryAnswer && retryIndex < session.messages.length - 1) {
-    const original = session
-    session = { id: desktopRequestId(), title: original.title + ' · 重试', updatedAt: Date.now(),
-      messages: structuredClone(original.messages.slice(0, retryIndex + 1)) }
-    chat.sessions.unshift(session)
-    chat.selected = session.id
+  let group, previousVersion
+  if (source) {
+    const index = session?.messages.indexOf(source) ?? -1
+    if (index < 0) return
+    source.versionGroup ||= desktopRequestId()
+    session.versions ||= {}
+    group = session.versions[source.versionGroup] ||= { active: 0, tails: [null] }
+    previousVersion = group.active
+    group.tails[previousVersion] = session.messages.splice(index)
+    group.active = group.tails.length
+    group.tails.push(null)
   }
-  const previousAnswer = retryAnswer ? session.messages.at(-1) : null
-  if (retryAnswer) session.messages.pop()
+  session ??= newChat()
   readingNavigation.latest()
   const controller = new AbortController()
   chat.error = ''
@@ -1363,9 +1519,9 @@ async function sendChat(text, retryAnswer = null) {
   chat.runningSessionId = session.id
   window.YingluoNative?.setReplySession?.(session.id)
   const userMessageId = retryAnswer ? retryUser.id || desktopRequestId() : desktopRequestId()
-  if (!retryAnswer) session.messages.push({ id: userMessageId, role: 'user', text, ...(files.length && { attachments: files }) })
+  session.messages.push({ id: userMessageId, role: 'user', text: retryUser?.text ?? text, ...(source && { versionGroup: source.versionGroup }), ...(files.length && { attachments: files }) })
   if (!retryAnswer && session.messages.length === 1) session.title = (text || files[0].name).slice(0, 34)
-  if (!retryAnswer) {
+  if (!retryAnswer && !edited) {
     attachments.chat = []
     composerEditing = false
     prompt.blur()
@@ -1446,10 +1602,19 @@ async function sendChat(text, retryAnswer = null) {
     chat.error = search && [400, 422].includes(error.status)
       ? '服务未接受这次联网请求，请检查模型和推理档位是否支持搜索，或关闭地球按钮重试。'
       : chatError(error)
-    if (previousAnswer) {
-      if (answer) session.messages.pop()
-      previousAnswer.replyError = error.name === 'AbortError' ? '已停止重试，保留原回复' : '重试失败，已保留原回复'
-      session.messages.push(previousAnswer)
+    if (retryAnswer) {
+      group.tails.pop()
+      group.active = previousVersion
+      const tail = group.tails[previousVersion]
+      session.messages.splice(retryIndex - 1)
+      session.messages = session.messages.concat(tail)
+      group.tails[previousVersion] = null
+      if (group.tails.length === 1) {
+        delete session.versions[source.versionGroup]
+        delete source.versionGroup
+      }
+      retryAnswer.replyError = error.name === 'AbortError' ? '已停止重试，保留原回复' : '重试失败，已保留原回复'
+      threadStructure = threadKey = ''
     } else {
       if (!answer) { answer = { id: desktopRequestId(), role: 'assistant', text: '' }; session.messages.push(answer) }
       answer.interrupted = true
@@ -1467,11 +1632,10 @@ async function sendChat(text, retryAnswer = null) {
   }
 }
 
-function sendWork(text) {
-  if (work.desktop) { void sendDesktop(text); return }
+function sendWork(text, files = attachments.work) {
+  if (work.desktop) { void sendDesktop(text, files); return }
   if (!work.session || work.session.status === 'running' || work.action) return
   const id = encodeURIComponent(work.selected)
-  const files = attachments.work
   if (files.length && work.summary?.attachments !== true) {
     work.error = '请更新并重启电脑端 Work 服务，再发送附件。'
     render()
@@ -1498,8 +1662,7 @@ function sendWork(text) {
   })
 }
 
-async function sendDesktop(text) {
-  const files = attachments.work
+async function sendDesktop(text, files = attachments.work) {
   if (work.action || (!text.trim() && !files.length)) return
   const selected = work.desktop
   work.sendError = ''
