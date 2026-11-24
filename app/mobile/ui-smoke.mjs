@@ -68,6 +68,9 @@ try {
   await page.getByRole('heading', { name: '模型', exact: true }).waitFor()
   await page.locator('.yingluo-model-settings[data-panel-state="open"]').waitFor()
   await page.screenshot({ path: join(folder, 'settings-sheet.png') })
+  assert.equal(await page.locator('#sidebar').evaluate(el => getComputedStyle(el).visibility), 'hidden')
+  assert.notEqual(await page.locator('.settings-sheet-layer').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)')
+
   await page.keyboard.press('Escape')
   await page.locator('.yingluo-model-settings').waitFor({ state: 'hidden' })
   assert.equal(await page.locator('#sidebar').isVisible(), true)

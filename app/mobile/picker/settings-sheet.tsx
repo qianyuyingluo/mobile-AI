@@ -20,13 +20,17 @@ export function SettingsSheet({ open, onClose, onClosed, children }: {
       onDismiss: () => callbacks.current.onClose(),
       onClosed: () => { setPresent(false); callbacks.current.onClosed() },
     })
-    return () => { motion.current?.dispose(); motion.current = null }
+    panel.dataset.sheetReady = 'true'
+    return () => {
+      delete panel.dataset.sheetReady
+      motion.current?.dispose(); motion.current = null
+    }
   }, [present])
   useLayoutEffect(() => {
     if (open && !present) { setPresent(true); return }
     if (present) { if (open) motion.current?.open(); else motion.current?.close() }
   }, [open, present])
-  return <Modal open={present} title="设置" closeLabel="关闭" onClose={onClose}
+  return <Modal open={present} backdropBlur={false} title="模型与记忆设置" closeLabel="关闭" onClose={onClose}
     className="yingluo-model-settings" contentClassName="yingluo-model-settings-content">
     <div ref={grip} className="panel-grip" aria-hidden="true"><span /></div>
     {children}

@@ -52,6 +52,7 @@
     <footer class="message-dock">
       <p id="search-toast" class="search-toast" role="status" aria-live="polite" hidden></p>
       <div class="reply-status"><p id="status" class="status" role="status" aria-live="polite" hidden></p><button type="button" id="stop" class="control" hidden>停止</button></div>
+      <div id="edit-context" hidden><span>正在编辑消息</span><button type="button" id="cancel-edit" class="control">取消编辑</button></div>
       <form id="composer" class="composer">
         <div id="attachment-list" class="attachment-list" aria-label="待发送附件" hidden></div>
         <input id="file-input" type="file" multiple hidden>
@@ -98,7 +99,7 @@
     </nav>
     <p id="sidebar-error" class="form-error" role="alert" hidden></p>
     <button type="button" id="oppo-live-updates" class="control" hidden>OPPO 实况通知</button>
-    <button type="button" id="open-settings" class="control sidebar-settings">设置</button>
+    <button type="button" id="open-settings" class="control sidebar-settings">模型与记忆设置</button>
   </dialog>
 
   <dialog id="desktop-library" aria-labelledby="library-title">

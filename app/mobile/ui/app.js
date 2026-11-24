@@ -26,7 +26,11 @@ let desktopAddresses = []
 let scanController
 const picker = $('agent-picker')
 const sidebar = $('sidebar')
-animateDialog(sidebar, { drawer: true })
+animateDialog(sidebar, { drawer: true, onShow() {
+  if (mode === 'work') work.deleteError = ''
+  $('open-sidebar').setAttribute('aria-expanded', 'true')
+  renderSidebar()
+} })
 for (const id of ['work-settings', 'computer-pairing', 'chat-memory']) animateDialog($(id))
 const viewImages = createImageViewer($('image-viewer'))
 const deleteDialog = $('delete-session')
@@ -62,6 +66,7 @@ let composerEditing = false
 
 let mode = 'chat'
 const chatMemory = createChatMemory(localStorage)
+let editingMessage = null
 const drafts = { chat: '', work: '' }
 const attachments = { chat: [], work: [] }
 const readingFiles = { chat: false, work: false }
@@ -217,6 +222,7 @@ function newChat() {
 
 function beginNewConversation() {
   if (work.action) return
+  finishEdit()
   sidebar.close()
   stopPolling()
   chat.selected = ''
@@ -303,12 +309,13 @@ function setComposerExpanded(expanded, focus = false) {
 
 function setMode(next) {
   if (next === mode) return
+  finishEdit()
   composerEditing = false
   if (next === 'work') modelPicker?.close()
   if (next === 'work') modelSettings?.close()
   drafts[mode] = prompt.value
   mode = next
-  if (desktopControl) $('open-settings').textContent = next === 'work' ? '手机配对' : '设置'
+  $('open-settings').textContent = next === 'chat' ? '模型与记忆设置' : (desktopControl ? '手机配对' : '设置')
   prompt.value = drafts[next]
   resizePrompt()
   resetScroll = true
@@ -864,74 +871,37 @@ function renderReplyDetails(row, message) {
   if (error) { error.textContent = message.replyError || ''; error.hidden = !message.replyError }
 }
 
+function editSession() {
+  if (mode === 'chat') return chat.selected
+  return work.desktop ? work.desktop.agent + ':' + work.desktop.id : work.selected
+}
+
+function finishEdit() {
+  if (!editingMessage) return
+  const edit = editingMessage
+  editingMessage = null
+  attachments[edit.mode] = edit.files
+  drafts[edit.mode] = edit.draft
+  if (edit.mode === mode) saveDraft(edit.draft)
+}
+
 function attachMessageEditor(row, message) {
   const body = row
   let timer, x, y
   const cancel = () => clearTimeout(timer)
   function open() {
     cancel()
-    if (!row.isConnected || document.querySelector('.message-editor') || (mode === 'chat' ? chat.run : work.action)) return
-    const dialog = node('dialog', '', 'message-editor')
-    dialog.setAttribute('aria-label', '编辑消息')
-    const field = node('textarea')
-    field.value = message.text
-    field.setAttribute('aria-label', '消息内容')
-    const files = [...(message.attachments || [])]
-    const picker = node('input')
-    picker.type = 'file'
-    picker.accept = imageTypes.join(',')
-    picker.multiple = true
-    picker.hidden = true
-    const list = node('div', '', 'editor-images')
-    const status = node('small')
-    const add = button('添加图片', () => picker.click(), 'control')
-    const refresh = () => {
-      list.replaceChildren(...files.map((file, i) => {
-        const remove = button('×', () => { files.splice(i, 1); refresh() }, 'control')
-        remove.setAttribute('aria-label', '移除 ' + file.name)
-        const item = node('span', '', 'editor-attachment')
-        if (file.data && imageTypes.includes(file.type)) {
-          const img = node('img')
-          img.src = 'data:' + file.type + ';base64,' + file.data
-          img.alt = file.name
-          item.append(img)
-        } else item.append(node('span', file.name))
-        item.append(remove)
-        return item
-      }))
+    if (!row.isConnected || !row.closest('#thread') || (mode === 'chat' ? chat.run : work.action) || readingFiles[mode]) return
+    if (!editingMessage) {
+      editingMessage = { mode, session: editSession(), draft: prompt.value, files: attachments[mode] }
     }
-    const resend = button('重新发送', async () => {
-      const text = field.value.trim()
-      if (!text && !files.length) return
-      resend.disabled = true
-      try {
-        const payload = await Promise.all(files.map(async file => {
-          if (file.data) return file
-          if (mode === 'work' && file.desktopFile) return readDesktopFile(file)
-          throw new Error('原图已不在本机，请移除后重新添加。')
-        }))
-        if (mode === 'chat') void sendChat(text, null, message, payload)
-        else sendWork(text, payload)
-        dialog.close()
-      } catch (error) { status.textContent = error.message }
-      finally { resend.disabled = false }
-    }, 'control')
-    picker.addEventListener('change', async () => {
-      resend.disabled = add.disabled = true
-      try {
-        const added = await prepareAttachments(mode, files, [...picker.files])
-        files.push(...added)
-        status.textContent = ''
-        refresh()
-      } catch (error) { status.textContent = error.message }
-      finally { picker.value = ''; resend.disabled = add.disabled = false }
-    })
-    refresh()
-    dialog.append(node('strong', '编辑消息'), field, list, status, picker, add, button('取消', () => dialog.close(), 'control'), resend)
-    document.body.append(dialog)
-    dialog.addEventListener('close', () => dialog.remove(), { once: true })
-    dialog.showModal()
-    field.focus()
+    editingMessage.message = message
+    attachments[mode] = [...(message.attachments || [])]
+    composerEditing = true
+    saveDraft(message.text || '')
+    render()
+    prompt.focus()
+    prompt.setSelectionRange(prompt.value.length, prompt.value.length)
   }
   body.addEventListener('contextmenu', event => { event.preventDefault(); open() })
   body.addEventListener('pointerdown', event => {
@@ -1162,6 +1132,31 @@ function renderThread() {
   resetScroll = false
 }
 
+// The question list stays fixed during a stream. The thread ResizeObserver
+// follows changes in answer height, respecting a reader who paused scrolling.
+function paintStreamingAnswer(session, answer, detailsChanged, sourcesChanged, statusChanged) {
+  if (mode !== 'chat' || chatSession() !== session) return
+  const row = thread.lastElementChild
+  const entry = mountedRichMessages.at(-1)
+  if (!row || row.dataset.messageKey !== session.id + ':' + answer.id) {
+    render()
+    return
+  }
+  const text = redact(answer.text)
+  if (entry?.message === answer && unmountMarkdown) {
+    if (entry.text !== text) {
+      entry.text = text
+      unmountMarkdown.updateLast(entry)
+    }
+  } else {
+    const body = row.querySelector('.message-body')
+    if (body && body.textContent !== text) body.textContent = text
+  }
+  if (detailsChanged) renderReplyDetails(row, answer)
+  if (sourcesChanged) renderSources(row, answer)
+  if (statusChanged) feedback($('status'), searchStatus || brand.assistant + '正在回复…')
+}
+
 function activeAnimation() {
   if (reducedMotion.matches) return 'still'
   if (mode === 'chat') return chat.run ? 'waiting' : chat.error ? 'failed' : 'idle'
@@ -1169,6 +1164,10 @@ function activeAnimation() {
 }
 
 function render() {
+  if (editingMessage && (editingMessage.session !== editSession() ||
+      (mode === 'chat' && !chatSession()?.messages.includes(editingMessage.message)))) finishEdit()
+  $('edit-context').hidden = !editingMessage
+  $('send').textContent = editingMessage ? '重新发送' : '发送'
   renderContext()
   renderSidebar()
   renderThread()
@@ -1521,7 +1520,8 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
   const userMessageId = retryAnswer ? retryUser.id || desktopRequestId() : desktopRequestId()
   session.messages.push({ id: userMessageId, role: 'user', text: retryUser?.text ?? text, ...(source && { versionGroup: source.versionGroup }), ...(files.length && { attachments: files }) })
   if (!retryAnswer && session.messages.length === 1) session.title = (text || files[0].name).slice(0, 34)
-  if (!retryAnswer && !edited) {
+  if (edited) finishEdit()
+  if (!source) {
     attachments.chat = []
     composerEditing = false
     prompt.blur()
@@ -1530,7 +1530,15 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
   }
   render()
   let answer
-  let frame = 0
+  let frame = 0, detailsChanged = false, sourcesChanged = false, statusChanged = false
+  function schedulePaint() {
+    if (frame) return
+    frame = requestAnimationFrame(() => {
+      frame = 0
+      paintStreamingAnswer(session, answer, detailsChanged, sourcesChanged, statusChanged)
+      detailsChanged = sourcesChanged = statusChanged = false
+    })
+  }
   const memory = chatMemory.snapshot()
   try {
     const effort = selection.reasoningEffort
@@ -1540,8 +1548,9 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
     if (model.route?.replay) { answer.reasoningEndpoint = provider.endpoint; answer.reasoningModel = model.id }
     session.messages.push(answer)
     const memoryFilter = memoryStream(delta => {
+      if (!answer.text && delta) detailsChanged = true
       answer.text += delta
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
+      schedulePaint()
     })
     const mode = search ? searchMode(provider, model.id) : null
     if (requiresSearchLookup(mode)) {
@@ -1561,13 +1570,16 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
     }
     const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], history, effort, search, memoryInstructions(memory))
     const stream = chatStreamReader(searchTransport(provider, mode), delta => memoryFilter.push(delta), update => {
+      if (update.sources || update.failed) sourcesChanged = true
+      if (update.status) statusChanged = true
       if (update.sources) answer.sources = update.sources
       if (update.failed) answer.searchFailed = true
       if (update.status) searchStatus = update.status
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
+      schedulePaint()
     }, delta => {
+      detailsChanged = true
       answer.reasoning += delta
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; render() })
+      schedulePaint()
     })
     render()
     await requestStream(url, {
@@ -1632,8 +1644,8 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
   }
 }
 
-function sendWork(text, files = attachments.work) {
-  if (work.desktop) { void sendDesktop(text, files); return }
+function sendWork(text, files = attachments.work, edit = null) {
+  if (work.desktop) { void sendDesktop(text, files, edit); return }
   if (!work.session || work.session.status === 'running' || work.action) return
   const id = encodeURIComponent(work.selected)
   if (files.length && work.summary?.attachments !== true) {
@@ -1646,7 +1658,7 @@ function sendWork(text, files = attachments.work) {
   composerEditing = false
   prompt.blur()
   setComposerExpanded(false)
-  saveDraft('')
+  if (!edit) saveDraft('')
   workMutation('send', async () => {
     const { session } = await workRequest('/sessions/' + id + '/messages', {
       method: 'POST',
@@ -1654,7 +1666,8 @@ function sendWork(text, files = attachments.work) {
         ...(work.summary?.reasoningEfforts?.[work.session?.agent] && { reasoningEffort: effort }) },
       ...(files.length && { timeout: 90000 }),
     })
-    if (attachments.work === files) attachments.work = []
+    if (edit && editingMessage === edit) finishEdit()
+    else if (attachments.work === files) attachments.work = []
     return session
   }, () => {
     if (mode === 'work' && !drafts.work) saveDraft(text)
@@ -1662,7 +1675,7 @@ function sendWork(text, files = attachments.work) {
   })
 }
 
-async function sendDesktop(text, files = attachments.work) {
+async function sendDesktop(text, files = attachments.work, edit = null) {
   if (work.action || (!text.trim() && !files.length)) return
   const selected = work.desktop
   work.sendError = ''
@@ -1682,8 +1695,12 @@ async function sendDesktop(text, files = attachments.work) {
     })
     localStorage.removeItem(key)
     if (work.desktop === selected) {
-      if (attachments.work === files) attachments.work = []
-      saveDraft(''); composerEditing = false; prompt.blur(); readingNavigation.latest()
+      if (edit && editingMessage === edit) finishEdit()
+      if (!edit) {
+        if (attachments.work === files) attachments.work = []
+        saveDraft('')
+      }
+      composerEditing = false; prompt.blur(); readingNavigation.latest()
     }
     work.error = ''
   } catch (error) {
@@ -1771,12 +1788,7 @@ mountDesktopLibrary({
   },
 })
 $('pair-addresses').addEventListener('change', () => void refreshDesktopQr())
-$('open-sidebar').addEventListener('click', () => {
-  if (mode === 'work') work.deleteError = ''
-  sidebar.showModal()
-  $('open-sidebar').setAttribute('aria-expanded', 'true')
-  renderSidebar()
-})
+$('open-sidebar').addEventListener('click', () => sidebar.showModal())
 sidebar.addEventListener('close', () => $('open-sidebar').setAttribute('aria-expanded', 'false'))
 sidebar.addEventListener('click', event => {
   if (event.target === sidebar && event.clientX > sidebar.getBoundingClientRect().right) sidebar.close()
@@ -1814,6 +1826,7 @@ window.yingluoBack = () => {
   if (!dialogs.length) {
     if (readingNavigation.close()) return true
     if (composerExpanded) { setComposerExpanded(false); return true }
+    if (editingMessage) { finishEdit(); render(); return true }
     return false
   }
   dialogs.at(-1).close()
@@ -1855,12 +1868,34 @@ $('file-input').addEventListener('change', event => {
   event.target.value = ''
   void addFiles(files)
 })
+async function resendEditedWork(text, edit) {
+  const files = attachments.work
+  readingFiles.work = true
+  render()
+  try {
+    const payload = await Promise.all(files.map(file => {
+      if (file.data) return file
+      if (file.desktopFile) return readDesktopFile(file)
+      throw new Error('原附件已不可用，请移除后重新添加。')
+    }))
+    if (editingMessage === edit && files === attachments.work) sendWork(text, payload, edit)
+  } catch (error) {
+    if (editingMessage === edit) work.error = error.message
+  } finally { readingFiles.work = false; render() }
+}
+$('cancel-edit').addEventListener('click', () => { finishEdit(); render(); prompt.focus() })
 $('composer').addEventListener('submit', event => {
   event.preventDefault()
   const text = prompt.value.trim()
   if ($('send').disabled || (!text && !attachments[mode].length)) return
-  if (mode === 'chat') sendChat(text)
-  else sendWork(text)
+  const edit = editingMessage
+  if (!edit) {
+    if (mode === 'chat') void sendChat(text)
+    else sendWork(text)
+    return
+  }
+  if (mode === 'chat') void sendChat(text, null, edit.message, attachments.chat)
+  else void resendEditedWork(text, edit)
 })
 prompt.addEventListener('focus', () => { composerEditing = true; updateComposerActions() })
 prompt.addEventListener('input', () => { composerEditing = true; drafts[mode] = prompt.value; resizePrompt(); updateComposerActions() })
@@ -1880,6 +1915,7 @@ prompt.addEventListener('paste', event => {
   void addFiles(images)
 })
 prompt.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && editingMessage) { event.preventDefault(); finishEdit(); render(); return }
   if (event.key === 'Escape' && composerExpanded) { event.preventDefault(); setComposerExpanded(false); return }
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing && !$('send').disabled) {
     event.preventDefault()
