@@ -25,3 +25,9 @@
   .reasoning-ticks i { background: #88888e; }
   .reasoning-ticks i.filled { background: #fff9; }
 }
+
+
+.reasoning-caption strong { overflow-wrap: anywhere; }
+
+
+.model-reasoning-settings { grid-column: 1 / -1; min-width: 0; }

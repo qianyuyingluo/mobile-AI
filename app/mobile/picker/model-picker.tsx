@@ -12,7 +12,7 @@ import { installIconSprite } from '../../packages/client/ui-theme/src/client/ico
 import '../../packages/client/ui-theme/src/styles/base.css'
 import '../../packages/client/ui-theme/src/styles/gradient-shadow-text.css'
 import './model-picker.css'
-import { ReasoningSlider } from './reasoning-slider.tsx'
+import { ReasoningSlider, reasoningLabel, subscribeReasoningNames } from './reasoning-slider.tsx'
 export { mountWorkEffort } from './reasoning-slider.tsx'
 export { mountModelSettings } from './model-settings.tsx'
 export { renderMarkdownMessages } from './message-markdown.tsx'
@@ -58,6 +58,14 @@ export function mountModelPicker(element: HTMLElement, { onSelect }: {
       }} />
   }
 
+  const currentEffortLabel = () => {
+    const selection = current.selection
+    const reasoning = current.providers.find(group => group.id === selection?.provider)?.models.find(model => model.id === selection?.model)?.reasoning
+    if (!reasoning?.efforts.length) return undefined
+    const effort = selection?.reasoningEffort ?? reasoning.defaultEffort ?? ''
+    return reasoningLabel(effort, reasoning.efforts.find(level => level.id === effort)?.name ?? effort)
+  }
+  subscribeReasoningNames(() => directory.set({ ...directory.getSnapshot(), retainedEffort: currentEffortLabel() }))
   let locked: boolean | undefined
   let previousGroups: readonly Provider[] = []
   let previous = ''
@@ -73,7 +81,7 @@ export function mountModelPicker(element: HTMLElement, { onSelect }: {
         // The companion owns the effort slider in the options slot; keep the Harness model list.
         const groups = next.providers.map(group => ({ ...group, models: group.models.map(({ reasoning, ...model }) => model) }))
         directory.set({ ...directory.getSnapshot(), groups,
-          current: next.selection, routable: next.selection !== null })
+          current: next.selection, retainedEffort: currentEffortLabel(), routable: next.selection !== null })
       }
       if (locked === next.locked && !changed) return
       locked = next.locked
