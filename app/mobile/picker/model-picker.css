@@ -3,7 +3,7 @@
 }
 
 .yingluo-model-picker button[aria-haspopup='menu'] {
-  max-width: min(180px, 45vw);
+  max-width: min(180px, 45vw, 100%);
 }
 
 @media (pointer: coarse) {
@@ -19,3 +19,9 @@
   }
 }
 
+
+/* Keep the chosen effort visible beside a truncated model name on phones. */
+.yingluo-model-picker button[aria-haspopup='menu'] > span:nth-of-type(2) {
+  flex-shrink: 0;
+  max-width: min(7em, 22vw);
+}

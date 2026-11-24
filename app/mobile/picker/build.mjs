@@ -17,6 +17,15 @@ export async function buildMobilePicker(outDir = join(here, 'dist')) {
     .map(id => ({ find: new RegExp('^' + id.replaceAll('/', '\\/') + '$'), replacement: web.resolve(id) }))
   await build({
     configFile: false,
+    plugins: [{
+      name: 'mobile-reasoning-settings',
+      enforce: 'pre',
+      resolveId(source, importer) {
+        if (source.replaceAll('\\', '/').endsWith('/ModelReasoningEfforts.tsx') && importer?.replaceAll('\\', '/').endsWith('/ui-settings-models/src/client/ModelRow.tsx')) {
+          return join(here, 'model-reasoning-settings.tsx')
+        }
+      },
+    }],
     root: here,
     logLevel: 'warn',
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
