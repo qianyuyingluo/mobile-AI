@@ -322,7 +322,13 @@ export function streamingChatRequest(provider, model, key, history, effort, webS
   if (provider.protocol === 'gemini') {
     request.url = request.url.replace(':generateContent', ':streamGenerateContent') + '?alt=sse'
     if (!request.data.generationConfig && /^gemini-(?:2\.5|[3-9])/.test(model)) request.data.generationConfig = { thinkingConfig: { includeThoughts: true } }
-  } else request.data.stream = true
+  } else {
+    request.data.stream = true
+    // Chat Completions omits usage unless asked; the other protocols always report it.
+    if (!['deepseek', 'anthropic', 'responses'].includes(provider.protocol)) {
+      request.data.stream_options = { include_usage: true }
+    }
+  }
   if (provider.protocol === 'responses' && /^(?:gpt-5(?:\.\d+)?(?:-mini|-nano)?|o3|o4-mini)(?:-\d{4}-\d{2}-\d{2})?$/.test(model)) {
     request.data.reasoning = { ...request.data.reasoning, summary: 'auto' }
   }
@@ -340,6 +346,14 @@ export function chatStreamReader(provider, onText, onSearch = () => {}, onReason
   let completed = false
   let truncated = false
   let receivedResponseText = false
+  let usage = null
+  // Providers report counters as running totals, so the largest value seen is the final one.
+  const recordUsage = (input, output) => {
+    if (!Number.isFinite(input) && !Number.isFinite(output)) return
+    usage ??= { input: 0, output: 0 }
+    if (Number.isFinite(input)) usage.input = Math.max(usage.input, input)
+    if (Number.isFinite(output)) usage.output = Math.max(usage.output, output)
+  }
   const blocks = []
   const inputJson = new Map()
   const sources = new Map()
@@ -393,6 +407,8 @@ export function chatStreamReader(provider, onText, onSearch = () => {}, onReason
         }
         if (value.type === 'content_block_delta' && value.delta?.type === 'text_delta') text = value.delta.text
         if (value.type === 'content_block_start' && value.content_block?.type === 'text') text = value.content_block.text
+        if (value.type === 'message_start') recordUsage(value.message?.usage?.input_tokens, value.message?.usage?.output_tokens)
+        if (value.type === 'message_delta') recordUsage(value.usage?.input_tokens, value.usage?.output_tokens)
         if (value.type === 'message_stop') completed = true
       } else if (provider.protocol === 'responses') {
         if (value.type === 'response.web_search_call.searching') onSearch({ status: '正在联网搜索…' })
@@ -415,10 +431,21 @@ export function chatStreamReader(provider, onText, onSearch = () => {}, onReason
         if (value.type === 'response.reasoning_summary_text.delta' || value.type === 'response.reasoning_text.delta') reasoning = value.delta
         if (value.type === 'response.reasoning_summary_part.added' && value.summary_index > 0) reasoning = '\n\n'
         if (value.type === 'response.completed') completed = true
+        if (value.type === 'response.completed' || value.type === 'response.incomplete') {
+          recordUsage(value.response?.usage?.input_tokens, value.response?.usage?.output_tokens)
+        }
       } else if (provider.protocol === 'gemini') {
         text = chatResponse(provider, value)
         reasoning = joinText(value.candidates?.[0]?.content?.parts?.filter(part => part.thought))
         if (value.candidates?.[0]?.finishReason) completed = true
+        if (value.usageMetadata) {
+          const meta = value.usageMetadata
+          // Thinking is billed as output, matching how the other protocols count it.
+          const output = Number.isFinite(meta.candidatesTokenCount) || Number.isFinite(meta.thoughtsTokenCount)
+            ? (meta.candidatesTokenCount ?? 0) + (meta.thoughtsTokenCount ?? 0)
+            : undefined
+          recordUsage(meta.promptTokenCount, output)
+        }
       } else {
         const delta = value.choices?.[0]?.delta
         const results = value.web_search ?? delta?.web_search ?? value.search_info?.search_results ?? delta?.search_info?.search_results
@@ -429,10 +456,14 @@ export function chatStreamReader(provider, onText, onSearch = () => {}, onReason
         const thought = value.choices?.[0]?.delta?.reasoning_content ?? value.choices?.[0]?.delta?.reasoning
         reasoning = typeof thought === 'string' ? thought : ''
         if (value.choices?.[0]?.finish_reason) completed = true
+        if (value.usage) recordUsage(value.usage.prompt_tokens ?? value.usage.input_tokens,
+          value.usage.completion_tokens ?? value.usage.output_tokens)
       }
       if (typeof text === 'string' && text) onText(text)
       if (typeof reasoning === 'string' && reasoning) onReasoning(reasoning)
     },
+    /** Provider-reported token usage, or null when this stream never carried any. */
+    usage() { return usage ? { ...usage } : null },
     finish() {
       if (!completed) throw new Error('Model stream interrupted')
       return blocks.filter(Boolean)
