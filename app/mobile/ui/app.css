@@ -537,6 +537,17 @@ body[data-ds-dark-theme] .conversation[data-active] .animation { opacity: .36; }
 .reply-status:has(#stop:not([hidden])) { padding-bottom: 6px; }
 .reply-status .status { flex: 1; min-width: 0; }
 .reply-status #stop { flex: none; }
+.usage-line { width: min(100%, 700px); margin: 6px auto 0; padding: 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: transparent; font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.usage-line[hidden] { display: none; }
+.usage-dot { opacity: .45; }
+.usage-list { display: grid; gap: 2px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.usage-row { display: grid; gap: 2px; padding: 9px 4px; border-bottom: 1px solid var(--dsw-alias-border-l2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage-row-head { display: flex; justify-content: space-between; gap: 12px; }
+.usage-row-head span:last-child, .usage-row-body { color: var(--dsw-alias-label-secondary); }
+.usage-row-body { display: flex; justify-content: space-between; gap: 12px; }
+.usage-turn { font-weight: 600; color: var(--dsw-alias-label-primary); }
+.usage-total { border-bottom: 0; padding-top: 12px; }
+#usage-sheet .sheet-handle, #usage-sheet .dialog-head { touch-action: none; user-select: none; }
 
 .composer-model { flex: 0 1 auto; min-width: 0; }
 .web-search { width: 44px; flex: none; padding: 0; font-size: 22px; }

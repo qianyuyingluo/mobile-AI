@@ -70,6 +70,7 @@
           <button type="submit" id="send" class="action">发送</button>
         </div>
       </form>
+      <button type="button" id="usage-line" class="usage-line" aria-haspopup="dialog" aria-controls="usage-sheet" title="Token 统计 · 点击查看每轮明细" hidden></button>
     </footer>
   </main>
 
@@ -128,6 +129,12 @@
     <button type="button" class="sheet-handle" data-close aria-label="收起参考资料"><span></span></button>
     <div class="dialog-head"><h2 id="sources-title">参考资料</h2><button type="button" class="control" data-close autofocus>收起</button></div>
     <div id="sources-list" class="sources-list"></div>
+  </dialog>
+
+  <dialog id="usage-sheet" class="sources-sheet" aria-labelledby="usage-title">
+    <button type="button" class="sheet-handle" aria-label="下滑关闭 Token 统计"><span></span></button>
+    <div class="dialog-head"><h2 id="usage-title">Token 统计</h2><button type="button" class="control" data-close autofocus>收起</button></div>
+    <div id="usage-list" class="usage-list"></div>
   </dialog>
 
   <dialog id="image-viewer" class="image-viewer" aria-label="图片预览">

@@ -9,6 +9,7 @@ import { brand } from './brand.js'
 import { createChatMemory, memoryInstructions, memoryStream, cleanMemoryBlocks } from './chat-memory.js'
 import { searchMode, searchTransport, lookupSources, requiresSearchLookup, withSearchResults } from './provider-search.js'
 import { supportsWebSearch, sourceUrl } from './chat-providers.js'
+import { formatSpeed, formatTokens, latestSpeed, sessionUsage, usageRows } from './usage.js'
 
 const $ = id => document.getElementById(id)
 const transcript = $('transcript')
@@ -1163,6 +1164,111 @@ function activeAnimation() {
   return { running: 'running', failed: 'failed', cancelled: 'waiting' }[work.session?.status] ?? 'idle'
 }
 
+/** Show the running token totals of this conversation under the composer. */
+function renderUsage() {
+  const line = $('usage-line')
+  const messages = mode === 'chat' ? chatSession()?.messages ?? [] : []
+  const totals = sessionUsage(messages)
+  line.hidden = !totals.replies
+  if (line.hidden) return
+  const speed = latestSpeed(messages)
+  line.replaceChildren(
+    node('span', '输入 ' + formatTokens(totals.hasInput ? totals.input : null)),
+    node('span', '·', 'usage-dot'),
+    node('span', '输出 ' + formatTokens(totals.hasOutput ? totals.output : null)),
+    node('span', '·', 'usage-dot'),
+    node('span', speed === null ? '速度 —' : formatSpeed(speed)),
+  )
+}
+
+function openUsage() {
+  const messages = mode === 'chat' ? chatSession()?.messages ?? [] : []
+  const totals = sessionUsage(messages)
+  const rows = usageRows(messages)
+  const list = $('usage-list')
+  list.replaceChildren()
+  $('usage-title').textContent = 'Token 统计 · ' + rows.length + ' 条回复'
+  for (const entry of rows) {
+    const item = node('div', '', 'usage-row')
+    const top = node('div', '', 'usage-row-head')
+    top.append(node('span', '第 ' + entry.turn + ' 轮', 'usage-turn'), node('span', formatSpeed(entry.speed)))
+    const body = node('div', '', 'usage-row-body')
+    body.append(node('span', '输入 ' + formatTokens(entry.input)), node('span', '输出 ' + formatTokens(entry.output)))
+    item.append(top, body)
+    list.append(item)
+  }
+  const total = node('div', '', 'usage-row usage-total')
+  const totalHead = node('div', '', 'usage-row-head')
+  totalHead.append(node('span', '合计', 'usage-turn'))
+  const totalBody = node('div', '', 'usage-row-body')
+  totalBody.append(node('span', '输入 ' + formatTokens(totals.hasInput ? totals.input : null)),
+    node('span', '输出 ' + formatTokens(totals.hasOutput ? totals.output : null)))
+  total.append(totalHead, totalBody)
+  list.append(total)
+  const sheet = $('usage-sheet')
+  if (!sheet.open) sheet.showModal()
+  list.scrollTop = 0
+}
+
+/** Swipe the sheet down by its handle or header, tap the handle, or tap above it, to close. */
+function bindSheetDismiss(sheet) {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  let drag
+  const reset = () => { sheet.style.transition = ''; sheet.style.transform = '' }
+  const settle = (transform, done) => {
+    if (reduced.matches) { reset(); done(); return }
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      sheet.removeEventListener('transitionend', changed)
+      reset()
+      done()
+    }
+    const changed = event => { if (event.target === sheet && event.propertyName === 'transform') finish() }
+    sheet.style.transition = 'transform 200ms cubic-bezier(.2,.8,.2,1)'
+    sheet.style.transform = transform
+    sheet.addEventListener('transitionend', changed)
+    setTimeout(finish, 260)
+  }
+  sheet.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || drag) return
+    const origin = event.target.closest('.sheet-handle, .dialog-head')
+    if (!origin || event.target.closest('.dialog-head button')) return
+    drag = { id: event.pointerId, start: event.clientY, last: event.clientY, time: performance.now(), speed: 0, moved: false }
+    sheet.setPointerCapture(event.pointerId)
+    sheet.style.transition = 'none'
+  })
+  sheet.addEventListener('pointermove', event => {
+    if (!drag || drag.id !== event.pointerId) return
+    const now = performance.now()
+    const delta = Math.max(0, event.clientY - drag.start)
+    if (delta > 6) drag.moved = true
+    if (now > drag.time) drag.speed = (event.clientY - drag.last) / (now - drag.time)
+    drag.last = event.clientY
+    drag.time = now
+    if (drag.moved) sheet.style.transform = 'translateY(' + delta + 'px)'
+  })
+  const end = event => {
+    if (!drag || drag.id !== event.pointerId) return
+    const gesture = drag
+    drag = undefined
+    if (sheet.hasPointerCapture(event.pointerId)) sheet.releasePointerCapture(event.pointerId)
+    const delta = Math.max(0, event.clientY - gesture.start)
+    // A quick flick closes only after it has travelled far enough to read as intent.
+    const flung = performance.now() - gesture.time < 120 && gesture.speed > .5 && delta > 48
+    if (!gesture.moved) { reset(); sheet.close(); return }
+    if (delta > 88 || flung) settle('translateY(100%)', () => sheet.close())
+    else settle('', () => {})
+  }
+  sheet.addEventListener('pointerup', end)
+  sheet.addEventListener('pointercancel', end)
+  sheet.addEventListener('click', event => {
+    const bounds = sheet.getBoundingClientRect()
+    if (event.target === sheet && event.clientY < bounds.top) sheet.close()
+  })
+}
+
 function render() {
   if (editingMessage && (editingMessage.session !== editSession() ||
       (mode === 'chat' && !chatSession()?.messages.includes(editingMessage.message)))) finishEdit()
@@ -1212,6 +1318,7 @@ function render() {
     if (animation.getAttribute('src') !== source) animation.src = source
   }
   updateComposerActions()
+  renderUsage()
 }
 
 function applyTheme() {
@@ -1547,6 +1654,8 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
     answer = { id: desktopRequestId(), role: 'assistant', text: '', reasoning: '', streaming: true }
     if (model.route?.replay) { answer.reasoningEndpoint = provider.endpoint; answer.reasoningModel = model.id }
     session.messages.push(answer)
+    // Speed starts at the first streamed fragment so queueing is not counted as generation.
+    let firstDeltaAt = 0
     const memoryFilter = memoryStream(delta => {
       if (!answer.text && delta) detailsChanged = true
       answer.text += delta
@@ -1569,7 +1678,10 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
       searchStatus = rows.length ? '搜索完成，正在生成回复…' : '未取得搜索资料，正在生成回复…'
     }
     const { url, ...prepared } = streamingChatRequest(provider, model.id, chatKeys[provider.id], history, effort, search, memoryInstructions(memory))
-    const stream = chatStreamReader(searchTransport(provider, mode), delta => memoryFilter.push(delta), update => {
+    const stream = chatStreamReader(searchTransport(provider, mode), delta => {
+      firstDeltaAt ||= performance.now()
+      memoryFilter.push(delta)
+    }, update => {
       if (update.sources || update.failed) sourcesChanged = true
       if (update.status) statusChanged = true
       if (update.sources) answer.sources = update.sources
@@ -1577,18 +1689,33 @@ async function sendChat(text, retryAnswer = null, edited = null, editedFiles = n
       if (update.status) searchStatus = update.status
       schedulePaint()
     }, delta => {
+      firstDeltaAt ||= performance.now()
       detailsChanged = true
       answer.reasoning += delta
       schedulePaint()
     })
     render()
-    await requestStream(url, {
+    const runStream = () => requestStream(url, {
       method: 'POST',
       ...prepared,
       signal: controller.signal,
       timeout: search || effort === 'max' || effort === 'high' ? 240000 : 120000,
       onEvent: stream.event,
     })
+    try {
+      await runStream()
+    } catch (error) {
+      // A strict gateway may reject stream_options; nothing streamed yet, so retry once without it.
+      if (error.status !== 400 || firstDeltaAt || !prepared.data?.stream_options) throw error
+      delete prepared.data.stream_options
+      await runStream()
+    }
+    const reported = stream.usage()
+    if (reported) {
+      answer.usage = reported
+      // A stopped stream has a token count but no comparable generation window.
+      if (firstDeltaAt && !controller.signal.aborted) answer.genMs = Math.round(performance.now() - firstDeltaAt)
+    }
     const nativeContent = stream.finish()
     const memoryResult = memoryFilter.finish()
     if (search && nativeContent.length) answer.nativeReply = { endpoint: provider.endpoint, model: model.id, content: cleanMemoryBlocks(nativeContent) }
@@ -1758,6 +1885,7 @@ $('work-history').addEventListener('click', () => setMode('work'))
 $('chat-mode').addEventListener('click', () => chooseDraftMode('chat'))
 $('work-mode').addEventListener('click', () => chooseDraftMode('work'))
 $('quick-new-session').addEventListener('click', beginNewConversation)
+$('usage-line').addEventListener('click', openUsage)
 $('expand-prompt').addEventListener('click', () => setComposerExpanded(!composerExpanded, true))
 $('open-settings').addEventListener('click', () => {
   if (mode === 'chat') openModelSettings()
@@ -1814,6 +1942,7 @@ $('sources-sheet').addEventListener('click', event => {
   if (event.target === sheet && (event.clientY < bounds.top || event.clientY > bounds.bottom
     || event.clientX < bounds.left || event.clientX > bounds.right)) sheet.close()
 })
+bindSheetDismiss($('usage-sheet'))
 window.yingluoBack = () => {
   const effortPopover = document.querySelector('#work-effort [popover]:popover-open')
   if (effortPopover) { effortPopover.hidePopover(); return true }

@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-**主要版本：下载 [mobile-AI.apk](app/mobile/mobile-AI.apk)**，当前版本 **1.0.3**，支持 Android 8.0 及以上。默认构建命令 `node app/mobile/android/build.mjs` 生成此 APK，也可显式使用 `--variant mobile-ai`。
+**主要版本：下载 [mobile-AI.apk](app/mobile/mobile-AI.apk)**，当前版本 **1.0.4**，支持 Android 8.0 及以上。默认构建命令 `node app/mobile/android/build.mjs` 生成此 APK，也可显式使用 `--variant mobile-ai`。
 
 猫娘版安装包：[Yingluo.apk（codex/ayane 分支）](https://github.com/qianyuyingluo/yingluo-neko/blob/codex/ayane/app/mobile/Yingluo.apk)。mobile-AI 使用 `app.mobileai.mobile`，绫音使用 `app.yingluo.mobile`，两款应用可以共存，聊天记录、记忆、API Key 与配对状态各自独立，需要分别配置。
 
@@ -81,6 +81,7 @@ node backend/server.mjs --lan --project "C:\Projects\my-project"
 - Chat 流式输出，支持停止生成并保留已收到的回复。
 - Chat 回复下方的循环箭头可重新生成，使用当前模型、推理等级与联网开关，保留原问题和图片；重试失败或取消保留原回复。重试较早的回答会新建带「重试」后缀的聊天，原聊天及后续消息保留。输入框中的草稿和待发附件不受重试影响。已从本机缓存移除的图片需要重新添加。
 - 模型接口返回的思考内容或思考摘要显示在正文上方，默认折叠，可展开查看流式内容，随 Chat 历史保存。未返回思考内容时不显示空面板，签名或加密思考数据不会作为文本展示。此处的重试用于手机 Chat，不重新执行电脑 Work 任务。
+- 输入框下方显示本对话累计的输入与输出 token，以及最新一条回复的平均输出速度；点击可展开每轮明细，下滑明细或点击上方空白处收起。速度从收到第一个片段起算，不含排队和首字延迟。只显示接口真实返回的用量，没有返回的接口显示「—」。
 - 渲染 Markdown 标题、表格、代码块与数学公式。
 - 本地保存聊天记录，在齿轮打开的侧栏中切换、删除会话。
 - 输入框自动增高、内部滚动，支持展开为大编辑区；收起后保留内容与光标。
@@ -202,10 +203,11 @@ node app/mobile/android/build.mjs
 
 ```powershell
 node --test backend/agents.test.mjs backend/server.test.mjs backend/desktop-sync.test.mjs
-node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs
+node --test app/mobile/chat-providers.test.mjs app/mobile/streaming.test.mjs app/mobile/native-streaming.test.mjs app/mobile/web-search.test.mjs app/mobile/usage.test.mjs
 node --test app/mobile/chat-memory.test.mjs
 node app/mobile/chat-memory-smoke.mjs
 node app/mobile/reply-smoke.mjs
+node app/mobile/usage-smoke.mjs
 node app/mobile/ui-smoke.mjs
 node app/mobile/reading-navigation-smoke.mjs
 ```
